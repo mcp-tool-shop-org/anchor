@@ -7,6 +7,7 @@ import type {
   AuditTimelineResponse,
   AuditEventRow,
   VersionDiff,
+  RecoveryAction,
 } from "../types";
 
 export function ArtifactDetail({
@@ -28,11 +29,13 @@ export function ArtifactDetail({
   const [editContent, setEditContent] = useState("");
   const [history, setHistory] = useState<AuditEventRow[]>([]);
   const [latestDiff, setLatestDiff] = useState<VersionDiff | null>(null);
+  const [recoveryActions, setRecoveryActions] = useState<RecoveryAction[]>([]);
 
   useEffect(() => {
     loadDetail();
     loadHistory();
     loadDiff();
+    loadRecovery();
   }, [artifactId]);
 
   async function loadDetail() {
@@ -64,6 +67,15 @@ export function ArtifactDetail({
       setLatestDiff(d);
     } catch {
       setLatestDiff(null);
+    }
+  }
+
+  async function loadRecovery() {
+    try {
+      const actions = await invoke<RecoveryAction[]>("get_recovery_actions", { artifactId });
+      setRecoveryActions(actions);
+    } catch {
+      setRecoveryActions([]);
     }
   }
 
@@ -164,8 +176,31 @@ export function ArtifactDetail({
         </span>
       </div>
 
+      {/* Recovery Actions */}
+      {recoveryActions.length > 0 && (
+        <>
+          <h2>Next Actions</h2>
+          <div style={{ marginBottom: 16 }}>
+            {recoveryActions.map((action, i) => (
+              <div key={i} className="blocker-card" style={{ marginBottom: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{action.title}</div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+                  {action.description}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 3, fontFamily: "monospace" }}>
+                  {action.ruleClause}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 1, fontStyle: "italic" }}>
+                  {action.whyFirst}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Actions */}
-      <h2>Actions</h2>
+      <h2>State Transitions</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {legalTransitions.map((t) => (
           <button

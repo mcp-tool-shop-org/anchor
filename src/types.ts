@@ -342,6 +342,8 @@ export interface RecoveryAction {
   description: string;
   priority: number;
   prerequisites: string[];
+  ruleClause: string;
+  whyFirst: string;
 }
 
 export type HealthStatus = 'healthy' | 'needs_attention' | 'critical';

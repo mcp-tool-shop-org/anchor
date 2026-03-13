@@ -110,6 +110,7 @@ pub fn compile(input: &ExportInput) -> Result<ExportPackage, ExportBlocked> {
     files.push(render_audit_log(input.audit_events));
     files.push(render_drift_report(input.alarms));
     files.push(render_readiness_report(&gate));
+    files.push(render_integrity_attestation(input, &gate));
 
     let manifest = ExportManifestPreview {
         file_count: files.len(),
@@ -437,10 +438,71 @@ fn render_readiness_report(gate: &GateEvaluation) -> ExportFile {
     }
 }
 
+/// Render the integrity attestation: proves the export was gate-checked.
+fn render_integrity_attestation(input: &ExportInput, gate: &GateEvaluation) -> ExportFile {
+    use crate::persistence::djb2_hash;
+
+    let mut md = String::new();
+    md.push_str("# Export Integrity Attestation\n\n");
+    md.push_str("This file attests that the exported package was produced by a gate-guarded\n");
+    md.push_str("export process. Every artifact was Approved, all trace links were present,\n");
+    md.push_str("and no blocking drift alarms were active at export time.\n\n");
+
+    md.push_str("## Gate Verdict\n\n");
+    md.push_str(&format!("- **Status:** {:?}\n", gate.status));
+    md.push_str(&format!("- **Blocking reasons:** {}\n", gate.blocking_reasons.len()));
+    md.push_str(&format!("- **Stale artifacts:** {}\n", gate.stale_summary.count));
+    md.push_str(&format!("- **Traceability failures:** {}\n", gate.traceability_failures));
+    md.push_str(&format!("- **Outdated approvals:** {}\n", gate.outdated_approvals.len()));
+    md.push_str(&format!("- **Active blocking alarms:** {}\n\n", gate.active_blocking_alarms.len()));
+
+    md.push_str("## Artifact Attestation\n\n");
+    md.push_str("| Artifact | Type | State | Version | Content Hash | Approved |\n");
+    md.push_str("|----------|------|-------|---------|--------------|----------|\n");
+    for artifact in input.artifacts {
+        let version = input.versions.iter().find(|v| v.id == artifact.current_version_id);
+        let has_approval = input.approvals.iter().any(|a| a.artifact_id == artifact.id);
+        let content_hash = version.map(|v| v.content_hash.as_str()).unwrap_or("-");
+        let ver_num = version.map(|v| v.version_number).unwrap_or(0);
+        md.push_str(&format!(
+            "| {} | {:?} | {:?} | v{} | `{}` | {} |\n",
+            artifact.title,
+            artifact.artifact_type,
+            artifact.state,
+            ver_num,
+            content_hash,
+            if has_approval { "Yes" } else { "No" },
+        ));
+    }
+
+    md.push_str("\n## Traceability Attestation\n\n");
+    md.push_str(&format!("- **Total trace links:** {}\n", input.links.len()));
+    md.push_str(&format!("- **Total approvals:** {}\n", input.approvals.len()));
+    md.push_str(&format!("- **Constitution version:** {}\n\n", input.constitution.version_id));
+
+    // Package hash: deterministic hash of all artifact content hashes
+    let mut combined = String::new();
+    for artifact in input.artifacts {
+        if let Some(v) = input.versions.iter().find(|v| v.id == artifact.current_version_id) {
+            combined.push_str(&v.content_hash);
+        }
+    }
+    let package_hash = djb2_hash(&combined);
+    md.push_str("## Package Integrity\n\n");
+    md.push_str(&format!("- **Schema version:** {}\n", SCHEMA_VERSION));
+    md.push_str(&format!("- **Content hash chain:** `{}`\n", package_hash));
+    md.push_str(&format!("- **Artifact count:** {}\n", input.artifacts.len()));
+    md.push_str(&format!("- **Export file count:** {}\n", gate.export_manifest_preview.file_count + 1));
+
+    ExportFile {
+        path: "reports/integrity-attestation.md".into(),
+        content: md,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::*;
 
     fn identity() -> LocalIdentity {
         LocalIdentity {
@@ -608,8 +670,8 @@ mod tests {
         let package = result.unwrap();
         assert_eq!(package.schema_version, SCHEMA_VERSION);
 
-        // project.json + constitution.md + 7 artifact .md + 4 reports = 13
-        assert_eq!(package.files.len(), 13);
+        // project.json + constitution.md + 7 artifact .md + 5 reports = 14
+        assert_eq!(package.files.len(), 14);
 
         // Check specific files exist
         let paths: Vec<&str> = package.files.iter().map(|f| f.path.as_str()).collect();
@@ -620,6 +682,7 @@ mod tests {
         assert!(paths.contains(&"reports/audit-log.md"));
         assert!(paths.contains(&"reports/drift-report.md"));
         assert!(paths.contains(&"reports/execution-readiness-report.md"));
+        assert!(paths.contains(&"reports/integrity-attestation.md"));
     }
 
     #[test]
@@ -707,7 +770,7 @@ mod tests {
 
     #[test]
     fn readiness_report_shows_ready() {
-        let (project, constitution, artifacts, versions, approvals, links) = full_project();
+        let (_project, constitution, artifacts, versions, approvals, links) = full_project();
         let gate = readiness_gate::evaluate(
             &artifacts, &versions, &approvals, &links, &constitution, &[], &[],
         );

@@ -188,7 +188,7 @@ impl Default for ProjectSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConstitutionPatch {
     pub one_sentence_promise: Option<String>,

@@ -33,6 +33,17 @@ export function GraphView({
     for (const l of detail.incomingLinks) neighbors.add(l.sourceId);
   }
 
+  if (artifacts.length === 0) {
+    return (
+      <div>
+        <h1>Dependency Graph</h1>
+        <div style={{ padding: 32, textAlign: "center", color: "var(--text-dim)" }}>
+          No artifacts loaded. Switch to a demo scenario to explore the graph.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1>Dependency Graph</h1>

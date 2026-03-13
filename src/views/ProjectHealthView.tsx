@@ -162,6 +162,16 @@ function ActionCard({ action, onExecute }: { action: RecoveryAction; onExecute: 
           <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
             {action.description}
           </div>
+          {action.ruleClause && (
+            <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 3, fontFamily: "monospace" }}>
+              {action.ruleClause}
+            </div>
+          )}
+          {action.whyFirst && (
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 1, fontStyle: "italic" }}>
+              Why this priority: {action.whyFirst}
+            </div>
+          )}
         </div>
         <div
           style={{

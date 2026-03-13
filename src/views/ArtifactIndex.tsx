@@ -22,6 +22,12 @@ export function ArtifactIndex({
   return (
     <div>
       <h1>Artifact Index</h1>
+      {artifacts.length === 0 ? (
+        <div style={{ padding: 32, textAlign: "center", color: "var(--text-dim)" }}>
+          <p style={{ fontSize: 14, marginBottom: 8 }}>No artifacts loaded.</p>
+          <p style={{ fontSize: 12 }}>Switch to a demo scenario or load a project file to get started.</p>
+        </div>
+      ) : (
       <table>
         <thead>
           <tr>
@@ -67,6 +73,7 @@ export function ArtifactIndex({
           ))}
         </tbody>
       </table>
+      )}
     </div>
   );
 }

@@ -24,6 +24,10 @@ pub struct RecoveryAction {
     pub description: String,
     pub priority: u32,
     pub prerequisites: Vec<String>,
+    /// Which constitutional rule or gate check requires this action.
+    pub rule_clause: String,
+    /// Why this action is prioritized above others.
+    pub why_first: String,
 }
 
 /// What kind of action this is — determines the UI affordance.
@@ -100,6 +104,8 @@ pub fn next_actions_for_artifact(
                 description: "This artifact was invalidated by an upstream change. Review content against the current constitution, update if needed, then revalidate and reapprove.".into(),
                 priority: 1,
                 prerequisites: vec![],
+                rule_clause: "§13.3 — No stale artifact may be present at export time".into(),
+                why_first: "Stale artifacts block the readiness gate. Until reconciled, no export is possible.".into(),
             });
         }
 
@@ -120,6 +126,8 @@ pub fn next_actions_for_artifact(
                     description: "This artifact is in Draft state with no content. Add meaningful content before advancing.".into(),
                     priority: 2,
                     prerequisites: vec![],
+                    rule_clause: "§5.1 — Every artifact must have substantive content before leaving Draft".into(),
+                    why_first: "Content is the foundation. Without it, validation and traceability checks cannot proceed.".into(),
                 });
             }
 
@@ -134,6 +142,8 @@ pub fn next_actions_for_artifact(
                     description: format!("{} — link to a {:?} artifact", req_desc, upstream_type),
                     priority: 3,
                     prerequisites: vec![],
+                    rule_clause: format!("§8.1 — {}", req_desc),
+                    why_first: "Trace links are checked before state transitions. Missing links block validation.".into(),
                 });
             }
 
@@ -146,6 +156,8 @@ pub fn next_actions_for_artifact(
                     description: "Content is present. Mark this artifact as complete to begin validation.".into(),
                     priority: 4,
                     prerequisites: vec![],
+                    rule_clause: "§5.2 — Draft → Complete requires substantive content".into(),
+                    why_first: "This is the natural next step after content is authored. Lower priority than content and links.".into(),
                 });
             }
         }
@@ -162,6 +174,8 @@ pub fn next_actions_for_artifact(
                     description: format!("{} — link to a {:?} artifact", req_desc, upstream_type),
                     priority: 2,
                     prerequisites: vec![],
+                    rule_clause: format!("§8.1 — {}", req_desc),
+                    why_first: "Missing links must be added before validation can complete.".into(),
                 });
             }
 
@@ -173,6 +187,8 @@ pub fn next_actions_for_artifact(
                 description: "Mark as validated after confirming content and trace links are correct.".into(),
                 priority: 3,
                 prerequisites: vec![],
+                rule_clause: "§5.3 — Complete → Valid requires all validation layers to pass".into(),
+                why_first: "Validation must follow content completion. Links should be resolved first.".into(),
             });
         }
 
@@ -188,6 +204,8 @@ pub fn next_actions_for_artifact(
                     description: "This artifact is validated but not yet approved. Approve to clear the readiness gate.".into(),
                     priority: 2,
                     prerequisites: vec![],
+                    rule_clause: "§5.4 — Valid → Approved requires explicit approval event".into(),
+                    why_first: "Approval is the final step before this artifact clears the gate.".into(),
                 });
             } else {
                 actions.push(RecoveryAction {
@@ -198,6 +216,8 @@ pub fn next_actions_for_artifact(
                     description: "Approval exists. Advance to Approved state.".into(),
                     priority: 2,
                     prerequisites: vec![],
+                    rule_clause: "§5.4 — Approval record exists, transition is lawful".into(),
+                    why_first: "Approval is recorded. This transition completes the artifact lifecycle.".into(),
                 });
             }
         }
@@ -224,6 +244,8 @@ pub fn next_actions_for_artifact(
                     ),
                     priority: 1,
                     prerequisites: vec![],
+                    rule_clause: "§13.3 — Active blocking alarms prevent export".into(),
+                    why_first: "Drift alarms indicate structural violations. They must be resolved before re-approval.".into(),
                 });
             }
             // If approved with no alarms, artifact is healthy — no actions needed

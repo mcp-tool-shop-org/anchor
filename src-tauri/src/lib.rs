@@ -17,6 +17,9 @@ pub mod store;
 pub mod traceability;
 pub mod validation;
 
+#[cfg(test)]
+mod acceptance_tests;
+
 /// Tauri app entry point. Called from main.rs.
 pub fn run() {
     use std::sync::Mutex;

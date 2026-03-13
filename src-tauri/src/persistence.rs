@@ -125,14 +125,14 @@ impl From<serde_json::Error> for PersistenceError {
 /// The hash covers the canonical JSON serialization of the payload.
 fn compute_content_hash(payload: &ProjectPayload) -> Result<String, serde_json::Error> {
     let json = serde_json::to_string(payload)?;
-    let hash = djb2_hash(json.as_bytes());
+    let hash = djb2_hash(&json);
     Ok(format!("{:016x}", hash))
 }
 
 /// djb2 hash — deterministic, fast, no external deps.
-fn djb2_hash(data: &[u8]) -> u64 {
+pub fn djb2_hash(data: &str) -> u64 {
     let mut hash: u64 = 5381;
-    for &byte in data {
+    for &byte in data.as_bytes() {
         hash = hash.wrapping_mul(33).wrapping_add(byte as u64);
     }
     hash

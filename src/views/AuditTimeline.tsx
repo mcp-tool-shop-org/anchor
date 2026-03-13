@@ -4,11 +4,15 @@ import type { AuditTimelineResponse, AuditEventRow } from "../types";
 
 export function AuditTimeline() {
   const [timeline, setTimeline] = useState<AuditTimelineResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<AuditTimelineResponse>("get_audit_timeline").then(setTimeline);
+    invoke<AuditTimelineResponse>("get_audit_timeline")
+      .then(setTimeline)
+      .catch((e) => setError(String(e)));
   }, []);
 
+  if (error) return <div style={{ color: "var(--red)", padding: 16 }}>Failed to load audit timeline: {error}</div>;
   if (!timeline) return <div className="loading">Loading timeline...</div>;
 
   const eventIcon = (eventType: string) => {
