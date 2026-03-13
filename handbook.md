@@ -276,6 +276,43 @@ Takes an `ExportInput` bundle (project, constitution, artifacts, versions, appro
 
 Each renderer is a pure function. The compiler runs the gate internally — if blocked, returns `ExportBlocked` with the full gate evaluation so the UI can show exactly why.
 
+## UI Shell
+
+The UI is aggressively subordinate to the Rust engine. It never computes readiness, invents state transitions, or decides export eligibility. Every answer comes from the backend.
+
+### Architecture
+
+- **Tauri command layer** (`commands.rs`): 4 read-only queries + 2 mutations. The bridge between engine and browser.
+- **Project store** (`store.rs`): In-memory project state behind a Mutex. Seeded with a demo project.
+- **React shell** (`src/`): Vite + React 19 + TypeScript. Three-column layout with bottom status bar.
+
+### Tauri Commands
+
+Read-only:
+- `get_project_snapshot` — all artifacts with state, version, approval, link counts, gate status
+- `get_artifact_detail` — one artifact with enriched trace links, alarms, legal transitions
+- `get_readiness_gate` — full gate evaluation (runs the gate engine live)
+- `get_export_preview` — runs the export compiler, returns file list or blocking reasons
+
+Mutations:
+- `transition_artifact` — moves artifact state through the state machine (backend validates legality)
+- `approve_artifact` — creates approval record, transitions Valid → Approved
+
+### Five Views
+
+1. **Artifact Index** — authoritative list with state, version, approval, link counts, alarms
+2. **Artifact Detail** — metadata, validation summary, trace links (enriched with titles), alarms, legal transition buttons, approve action
+3. **Readiness Gate** — pass/fail banner, blocking reasons with rule provenance and remediation steps, stale/outdated summaries, export manifest
+4. **Export Panel** — ready/blocked status, 13-file package preview with sizes, or blocking reasons
+5. **Graph View** — focused on selected node + one hop in/out, click to navigate neighbors
+
+### UI Rules
+
+- The UI never computes readiness on its own. It only renders backend results.
+- The UI never invents state transitions. Every transition goes through the Rust state machine.
+- Illegal actions are visible-but-disabled with reasons. Hidden constraints create confusion; explicit constraints create trust.
+- Every "why is this blocked?" answer is one click away. The inspector panel always shows gate status and blocker codes.
+
 ## Build Sequence
 
 1. ✅ Canonical TypeScript types — `packages/schema/src/anchor-domain.ts`
@@ -285,8 +322,8 @@ Each renderer is a pure function. The compiler runs the gate internally — if b
 5. ✅ Drift alarm rule engine — `src-tauri/src/drift_rules.rs`
 6. ✅ Stale propagation — `src-tauri/src/stale_propagation.rs`
 7. ✅ Execution readiness gate — `src-tauri/src/readiness_gate.rs`
-8. ✅ Export compiler
-9. Full UI shell wired to backend law
+8. ✅ Export compiler — `src-tauri/src/export_compiler.rs`
+9. ✅ UI shell wired to backend law
 
 ## Audit Events
 

@@ -55,24 +55,39 @@ No export until the gate clears. No gate clearance with stale artifacts, active 
 packages/
   schema/
     src/
-      anchor-domain.ts    # Canonical TypeScript types (source of truth)
+      anchor-domain.ts     # Canonical TypeScript types (source of truth)
 src-tauri/
   src/
-    domain.rs             # Rust domain structs (mirrors TS types)
-    state_machine.rs      # Lifecycle transitions, stale propagation, gate computation
-    traceability.rs       # Traceability graph validation + bidirectional queries
-    drift_rules.rs        # Drift alarm rule engine (5 categories)
-    stale_propagation.rs  # Recursive dependency walk + stale marking
-    readiness_gate.rs     # Execution readiness gate evaluator
-    export_compiler.rs    # Gate-guarded export package renderer
-  Cargo.toml              # Crate configuration
-  lib.rs                  # Module declarations
-handbook.md               # Full product handbook
+    domain.rs              # Rust domain structs (mirrors TS types)
+    state_machine.rs       # Lifecycle transitions, stale propagation, gate computation
+    traceability.rs        # Traceability graph validation + bidirectional queries
+    drift_rules.rs         # Drift alarm rule engine (5 categories)
+    stale_propagation.rs   # Recursive dependency walk + stale marking
+    readiness_gate.rs      # Execution readiness gate evaluator
+    export_compiler.rs     # Gate-guarded export package renderer
+    store.rs               # In-memory project store with demo data
+    commands.rs            # Tauri command layer (4 reads + 2 mutations)
+    main.rs                # Tauri app entry point
+    lib.rs                 # Module declarations + run()
+  Cargo.toml               # Crate configuration
+  tauri.conf.json          # Tauri app configuration
+  capabilities/default.json
+src/
+  App.tsx                  # Shell layout (sidebar, center, inspector, status bar)
+  App.css                  # Dark theme styles
+  types.ts                 # TypeScript interfaces matching Rust serde output
+  views/
+    ArtifactIndex.tsx       # Artifact list with state, version, links, alarms
+    ArtifactDetail.tsx      # Single artifact: metadata, links, transitions, approval
+    ReadinessGate.tsx       # Gate status, blockers, remediation, manifest
+    ExportPanel.tsx         # Export preview or blocking reasons
+    GraphView.tsx           # Focused dependency graph (one-hop neighborhood)
+handbook.md                # Full product handbook
 ```
 
 ## Status
 
-Schema Pack v1 + Law Engine complete:
+Schema Pack v1 + Law Engine + UI Shell complete:
 - [x] Canonical TypeScript types (11 enums, 11 domain entities, 9 artifact content shapes)
 - [x] Rust domain structs with serde
 - [x] Artifact lifecycle state machine with tests
@@ -81,9 +96,9 @@ Schema Pack v1 + Law Engine complete:
 - [x] Stale propagation (recursive dependency walk, constitution amendment nuclear path)
 - [x] Execution readiness gate evaluator (6 blocking checks, export manifest preview)
 - [x] Export compiler (gate-guarded, 13-file export package, 7 renderers)
-- [ ] UI shell
+- [x] UI shell (Tauri command layer + React shell with 5 views)
 
-59 tests across 7 modules, all passing.
+59 Rust tests across 7 modules, all passing. Tauri app compiles. Frontend builds clean.
 
 ## Documentation
 

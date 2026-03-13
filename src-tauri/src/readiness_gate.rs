@@ -21,7 +21,8 @@ use crate::traceability;
 // ─── Gate Evaluation ────────────────────────────────────────
 
 /// Complete gate evaluation result.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GateEvaluation {
     pub status: GateStatus,
     pub blocking_reasons: Vec<BlockingReason>,
@@ -33,13 +34,15 @@ pub struct GateEvaluation {
     pub export_manifest_preview: ExportManifestPreview,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StaleSummary {
     pub count: usize,
     pub artifact_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OutdatedApproval {
     pub approval_id: String,
     pub artifact_id: String,
@@ -47,7 +50,8 @@ pub struct OutdatedApproval {
     pub current_constitution_version: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ActiveAlarmSummary {
     pub alarm_id: String,
     pub alarm_type: crate::domain::DriftAlarmType,

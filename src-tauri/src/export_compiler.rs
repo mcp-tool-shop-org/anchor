@@ -19,14 +19,16 @@ use crate::traceability;
 // ─── Export Package ─────────────────────────────────────────
 
 /// A rendered export file: path + utf-8 content.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportFile {
     pub path: String,
     pub content: String,
 }
 
 /// The complete export package, ready to write to disk.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportPackage {
     pub project_name: String,
     pub schema_version: String,
@@ -35,7 +37,8 @@ pub struct ExportPackage {
 }
 
 /// Error returned when export is blocked.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportBlocked {
     pub gate_evaluation: GateEvaluation,
 }
