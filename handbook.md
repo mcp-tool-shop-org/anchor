@@ -260,6 +260,22 @@ One pure function that produces:
 
 Dead simple to call. Impossible for the frontend to fake.
 
+### Export Compiler (`export_compiler.rs`)
+
+Gate-guarded pure function that renders the canonical export package. Only callable when the readiness gate returns Ready.
+
+Takes an `ExportInput` bundle (project, constitution, artifacts, versions, approvals, links, alarms, amendments, audit events) and produces an `ExportPackage` containing 13 files:
+
+- `project.json` — machine-readable canonical source (full project serialization)
+- `constitution.md` — rendered constitution with promise, fantasy, outcomes, anti-goals, quality bar, failure condition
+- 7 artifact markdown files (`artifacts/*.md`) — one per authored artifact type, with state, version hash, and JSON content snapshot
+- `reports/traceability-matrix.md` — source→target link table with validation summary
+- `reports/audit-log.md` — chronological event log with actors
+- `reports/drift-report.md` — active vs resolved alarms with severity and remediation
+- `reports/execution-readiness-report.md` — gate status, blocking reasons, manifest, stale/outdated summaries
+
+Each renderer is a pure function. The compiler runs the gate internally — if blocked, returns `ExportBlocked` with the full gate evaluation so the UI can show exactly why.
+
 ## Build Sequence
 
 1. ✅ Canonical TypeScript types — `packages/schema/src/anchor-domain.ts`
@@ -269,7 +285,7 @@ Dead simple to call. Impossible for the frontend to fake.
 5. ✅ Drift alarm rule engine — `src-tauri/src/drift_rules.rs`
 6. ✅ Stale propagation — `src-tauri/src/stale_propagation.rs`
 7. ✅ Execution readiness gate — `src-tauri/src/readiness_gate.rs`
-8. Export compiler
+8. ✅ Export compiler
 9. Full UI shell wired to backend law
 
 ## Audit Events

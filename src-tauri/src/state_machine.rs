@@ -4,7 +4,7 @@
 //! and stale propagation. This is the law. The UI is the window.
 
 use crate::domain::{
-    Artifact, ArtifactState, ArtifactType, DriftAlarmSeverity, DriftAlarmStatus,
+    Artifact, ArtifactState, ArtifactType, DriftAlarmSeverity,
     GateStatus, ValidationStatus, ValidationSummary,
 };
 

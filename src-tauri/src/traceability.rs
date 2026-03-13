@@ -248,8 +248,15 @@ pub fn validate_bidirectional_explainability(
     for artifact in artifacts {
         // Constitution is root — only needs downstream
         // ExecutionReadinessGate is terminal — only needs upstream
+        // AcceptanceChecklists and DriftAlarmDefinitions are the last authored artifacts;
+        // their only downstream is the computed gate, so they are exempt from downstream requirement
         let needs_upstream = artifact.artifact_type != ArtifactType::Constitution;
-        let needs_downstream = artifact.artifact_type != ArtifactType::ExecutionReadinessGate;
+        let needs_downstream = !matches!(
+            artifact.artifact_type,
+            ArtifactType::ExecutionReadinessGate
+                | ArtifactType::AcceptanceChecklists
+                | ArtifactType::DriftAlarmDefinitions
+        );
 
         if needs_upstream {
             let up = upstream_links(&artifact.id, links);

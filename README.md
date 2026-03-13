@@ -64,6 +64,9 @@ src-tauri/
     drift_rules.rs        # Drift alarm rule engine (5 categories)
     stale_propagation.rs  # Recursive dependency walk + stale marking
     readiness_gate.rs     # Execution readiness gate evaluator
+    export_compiler.rs    # Gate-guarded export package renderer
+  Cargo.toml              # Crate configuration
+  lib.rs                  # Module declarations
 handbook.md               # Full product handbook
 ```
 
@@ -77,8 +80,10 @@ Schema Pack v1 + Law Engine complete:
 - [x] Drift alarm rule engine (traceability, constitution, sequence, scope drift detection)
 - [x] Stale propagation (recursive dependency walk, constitution amendment nuclear path)
 - [x] Execution readiness gate evaluator (6 blocking checks, export manifest preview)
-- [ ] Export compiler
+- [x] Export compiler (gate-guarded, 13-file export package, 7 renderers)
 - [ ] UI shell
+
+59 tests across 7 modules, all passing.
 
 ## Documentation
 

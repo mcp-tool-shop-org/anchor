@@ -16,8 +16,6 @@ use crate::domain::{
     AmendmentStatus, ExportFileEntry, ExportManifestPreview, GateStatus,
     RuleProvenance, SourceArtifactType, TraceLink,
 };
-use crate::drift_rules::{self, DriftAlarmBlueprint};
-use crate::stale_propagation;
 use crate::traceability;
 
 // ─── Gate Evaluation ────────────────────────────────────────
@@ -534,12 +532,16 @@ mod tests {
     }
 
     fn make_link(source: &str, target: &str) -> TraceLink {
+        make_typed_link(source, target, TraceLinkType::DerivesFrom)
+    }
+
+    fn make_typed_link(source: &str, target: &str, link_type: TraceLinkType) -> TraceLink {
         TraceLink {
             id: format!("link-{}-{}", source, target),
             project_id: "proj-1".into(),
             source_node_id: source.into(),
             target_node_id: target.into(),
-            link_type: TraceLinkType::DerivesFrom,
+            link_type,
             rationale: "test".into(),
             created_by: identity(),
             created_at: "2026-03-13T00:00:00Z".into(),
@@ -682,15 +684,17 @@ mod tests {
             .collect();
         let constitution = make_constitution("cv1");
 
-        // Full trace link chain
+        // Full trace link chain with correct types per §8.1
         let links = vec![
-            make_link("wf-1", "const-1"),
-            make_link("feat-1", "wf-1"),
-            make_link("sys-1", "feat-1"),
-            make_link("ux-1", "wf-1"),
-            make_link("phase-1", "const-1"),
-            make_link("check-1", "phase-1"),
-            make_link("drift-1", "const-1"),
+            make_link("wf-1", "const-1"),                                    // DerivesFrom (§8.1 trace-001)
+            make_link("feat-1", "wf-1"),                                     // DerivesFrom (§8.1 trace-002 allows Justifies|DerivesFrom)
+            make_typed_link("sys-1", "feat-1", TraceLinkType::Implements),   // §8.1 trace-003
+            make_typed_link("ux-1", "wf-1", TraceLinkType::DependsOn),      // §8.1 trace-004
+            make_typed_link("ux-1", "sys-1", TraceLinkType::DependsOn),     // cross-link: gives sys-1 downstream
+            make_typed_link("phase-1", "const-1", TraceLinkType::ValidatedBy), // §8.1 trace-005
+            make_typed_link("phase-1", "ux-1", TraceLinkType::DependsOn),   // cross-link: gives ux-1 downstream
+            make_typed_link("check-1", "phase-1", TraceLinkType::DependsOn), // gives phase-1 downstream
+            make_typed_link("drift-1", "const-1", TraceLinkType::InvalidatedBy), // §8.1 trace-006
         ];
 
         let result = evaluate(
