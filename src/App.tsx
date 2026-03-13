@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ProjectSnapshot, GateEvaluation } from "./types";
+import type { ProjectSnapshot, GateEvaluation, SaveLoadResponse } from "./types";
 import { ArtifactIndex } from "./views/ArtifactIndex";
 import { ArtifactDetail } from "./views/ArtifactDetail";
 import { ReadinessGate } from "./views/ReadinessGate";
 import { ExportPanel } from "./views/ExportPanel";
 import { GraphView } from "./views/GraphView";
+import { AuditTimeline } from "./views/AuditTimeline";
+import { AmendmentPanel } from "./views/AmendmentPanel";
 
-type View = "index" | "detail" | "gate" | "export" | "graph";
+type View = "index" | "detail" | "gate" | "export" | "graph" | "timeline" | "amend";
 
 export default function App() {
   const [view, setView] = useState<View>("index");
@@ -40,10 +42,35 @@ export default function App() {
     loadGate();
   }
 
+  async function handleSave() {
+    const path = prompt("Save project to:", "forge-quest.anchor.json");
+    if (!path) return;
+    const res = await invoke<SaveLoadResponse>("save_project", { filePath: path });
+    if (res.success) {
+      alert("Saved to " + res.filePath);
+    } else {
+      alert("Save failed: " + res.error);
+    }
+  }
+
+  async function handleLoad() {
+    const path = prompt("Load project from:");
+    if (!path) return;
+    const res = await invoke<SaveLoadResponse>("load_project", { filePath: path });
+    if (res.success) {
+      refreshAll();
+      setView("index");
+    } else {
+      alert("Load failed: " + res.error);
+    }
+  }
+
   const navItems: { key: View; label: string }[] = [
     { key: "index", label: "Artifact Index" },
     { key: "gate", label: "Readiness Gate" },
     { key: "export", label: "Export Package" },
+    { key: "amend", label: "Amendments" },
+    { key: "timeline", label: "Audit Timeline" },
     { key: "graph", label: "Graph View" },
   ];
 
@@ -75,6 +102,20 @@ export default function App() {
               {snapshot.project.name}
             </div>
             <div>{snapshot.artifacts.length} artifacts</div>
+            <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+              <button
+                onClick={handleSave}
+                style={{ fontSize: 10, padding: "2px 8px" }}
+              >
+                Save
+              </button>
+              <button
+                onClick={handleLoad}
+                style={{ fontSize: 10, padding: "2px 8px" }}
+              >
+                Load
+              </button>
+            </div>
           </div>
         )}
       </nav>
@@ -96,6 +137,8 @@ export default function App() {
         )}
         {view === "gate" && <ReadinessGate />}
         {view === "export" && <ExportPanel />}
+        {view === "amend" && <AmendmentPanel onRefresh={refreshAll} />}
+        {view === "timeline" && <AuditTimeline />}
         {view === "graph" && snapshot && (
           <GraphView
             artifacts={snapshot.artifacts}

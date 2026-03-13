@@ -135,3 +135,41 @@ export interface TransitionResponse {
   newState: string | null;
   error: string | null;
 }
+
+// ── Step 10: Operational Governance Types ─────────────────
+
+export interface EditResponse {
+  success: boolean;
+  newVersionNumber: number | null;
+  newState: string | null;
+  staleArtifactIds: string[];
+  error: string | null;
+}
+
+export interface AmendmentResponse {
+  success: boolean;
+  amendmentId: string | null;
+  status: string | null;
+  affectedArtifactIds: string[];
+  impactSummary: string | null;
+  error: string | null;
+}
+
+export interface AuditTimelineResponse {
+  events: AuditEventRow[];
+  totalCount: number;
+}
+
+export interface AuditEventRow {
+  id: string;
+  eventType: string;
+  occurredAt: string;
+  actorName: string;
+  summary: string;
+}
+
+export interface SaveLoadResponse {
+  success: boolean;
+  filePath: string | null;
+  error: string | null;
+}

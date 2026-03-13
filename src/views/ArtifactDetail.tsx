@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ArtifactDetailResponse, TransitionResponse } from "../types";
+import type {
+  ArtifactDetailResponse,
+  TransitionResponse,
+  EditResponse,
+  AuditTimelineResponse,
+  AuditEventRow,
+} from "../types";
 
 export function ArtifactDetail({
   artifactId,
@@ -13,9 +19,13 @@ export function ArtifactDetail({
 }) {
   const [detail, setDetail] = useState<ArtifactDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [history, setHistory] = useState<AuditEventRow[]>([]);
 
   useEffect(() => {
     loadDetail();
+    loadHistory();
   }, [artifactId]);
 
   async function loadDetail() {
@@ -25,6 +35,40 @@ export function ArtifactDetail({
       });
       setDetail(d);
       setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const h = await invoke<AuditTimelineResponse>("get_artifact_history", {
+        artifactId,
+      });
+      setHistory(h.events);
+    } catch {
+      // History may be empty for new artifacts
+    }
+  }
+
+  async function doEdit() {
+    try {
+      const content = JSON.parse(editContent);
+      const hash = "hash-" + Date.now();
+      const res = await invoke<EditResponse>("edit_artifact_content", {
+        artifactId,
+        content,
+        contentHash: hash,
+      });
+      if (res.success) {
+        setEditing(false);
+        setEditContent("");
+        await loadDetail();
+        await loadHistory();
+        onRefresh();
+      } else {
+        setError(res.error ?? "Edit failed");
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -172,6 +216,114 @@ export function ArtifactDetail({
             </div>
           ))}
         </>
+      )}
+
+      {/* Content Editor */}
+      {artifact.artifactType !== "execution_readiness_gate" &&
+        artifact.artifactType !== "constitution" && (
+        <>
+          <h2>Content</h2>
+          {!editing ? (
+            <div>
+              <pre
+                style={{
+                  background: "var(--bg-deeper, #1a1a2e)",
+                  padding: 12,
+                  borderRadius: 3,
+                  fontSize: 11,
+                  maxHeight: 200,
+                  overflow: "auto",
+                  marginBottom: 8,
+                }}
+              >
+                {version?.content
+                  ? JSON.stringify(version.content, null, 2)
+                  : "No content"}
+              </pre>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setEditContent(
+                    version?.content
+                      ? JSON.stringify(version.content, null, 2)
+                      : "{}"
+                  );
+                  setEditing(true);
+                }}
+              >
+                Edit Content
+              </button>
+            </div>
+          ) : (
+            <div>
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={10}
+                style={{
+                  width: "100%",
+                  background: "var(--bg-deeper, #1a1a2e)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  padding: 8,
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  marginBottom: 8,
+                }}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary" onClick={doEdit}>
+                  Save Edit
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setEditing(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                Editing an Approved artifact will mark it Stale. Editing a Valid
+                artifact will require revalidation. Downstream dependents may be
+                marked stale.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Artifact History */}
+      <h2>History ({history.length})</h2>
+      {history.length === 0 ? (
+        <div className="empty">No audit events for this artifact yet.</div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            fontSize: 12,
+          }}
+        >
+          {history.map((evt: AuditEventRow) => (
+            <div
+              key={evt.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "120px 70px 1fr",
+                gap: 8,
+                padding: "4px 0",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <span style={{ color: "var(--text-dim)", fontFamily: "monospace" }}>
+                {evt.occurredAt.replace("T", " ").replace("Z", "")}
+              </span>
+              <span style={{ color: "var(--text-dim)" }}>{evt.actorName}</span>
+              <span>{evt.summary}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

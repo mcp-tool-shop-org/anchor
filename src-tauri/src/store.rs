@@ -5,6 +5,7 @@
 
 use crate::domain::*;
 
+#[derive(Debug)]
 pub struct ProjectStore {
     pub project: Project,
     pub constitution: Constitution,
@@ -46,6 +47,7 @@ impl ProjectStore {
                 "art-phase".into(),
                 "art-check".into(),
                 "art-drift".into(),
+                "art-gate".into(),
             ],
             active_amendment_id: None,
             settings: ProjectSettings::default(),
@@ -98,6 +100,7 @@ impl ProjectStore {
             make_artifact("art-phase", ArtifactType::PhaseRoadmapContracts, "Phase Roadmap + Contracts", ArtifactState::Valid),
             make_artifact("art-check", ArtifactType::AcceptanceChecklists, "Acceptance Checklists", ArtifactState::Complete),
             make_artifact("art-drift", ArtifactType::DriftAlarmDefinitions, "Drift Alarm Definitions", ArtifactState::Draft),
+            make_artifact("art-gate", ArtifactType::ExecutionReadinessGate, "Execution Readiness Gate", ArtifactState::Draft),
         ];
 
         let versions: Vec<ArtifactVersion> = artifacts

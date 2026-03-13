@@ -8,8 +8,12 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::State;
 
+use crate::amendments;
+use crate::audit_log;
 use crate::domain::*;
+use crate::editing;
 use crate::export_compiler::{self, ExportInput};
+use crate::persistence;
 use crate::readiness_gate::{self, GateEvaluation};
 use crate::state_machine;
 use crate::store::ProjectStore;
@@ -91,6 +95,54 @@ pub struct ExportFilePreview {
 pub struct TransitionResponse {
     pub success: bool,
     pub new_state: Option<ArtifactState>,
+    pub error: Option<String>,
+}
+
+// ─── New Response Types (Step 10) ───────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditResponse {
+    pub success: bool,
+    pub new_version_number: Option<u32>,
+    pub new_state: Option<ArtifactState>,
+    pub stale_artifact_ids: Vec<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AmendmentResponse {
+    pub success: bool,
+    pub amendment_id: Option<String>,
+    pub status: Option<AmendmentStatus>,
+    pub affected_artifact_ids: Vec<String>,
+    pub impact_summary: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditTimelineResponse {
+    pub events: Vec<AuditEventRow>,
+    pub total_count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEventRow {
+    pub id: String,
+    pub event_type: AuditEventType,
+    pub occurred_at: String,
+    pub actor_name: String,
+    pub summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveLoadResponse {
+    pub success: bool,
+    pub file_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -374,6 +426,384 @@ pub fn approve_artifact(
     })
 }
 
+// ─── Step 10: Edit / Amend / Save / Load / History ──────────
+
+#[tauri::command]
+pub fn edit_artifact_content(
+    state: State<'_, AppState>,
+    artifact_id: String,
+    content: serde_json::Value,
+    content_hash: String,
+) -> Result<EditResponse, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+    let editor = store.project.created_by.clone();
+    let timestamp = now_iso();
+
+    match editing::edit_artifact(
+        &mut store,
+        &artifact_id,
+        content,
+        &content_hash,
+        &editor,
+        &timestamp,
+    ) {
+        Ok(result) => Ok(EditResponse {
+            success: true,
+            new_version_number: Some(result.new_version.version_number),
+            new_state: Some(result.new_state),
+            stale_artifact_ids: result.stale_artifact_ids,
+            error: None,
+        }),
+        Err(e) => Ok(EditResponse {
+            success: false,
+            new_version_number: None,
+            new_state: None,
+            stale_artifact_ids: vec![],
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn propose_amendment(
+    state: State<'_, AppState>,
+    reason: String,
+    one_sentence_promise: Option<String>,
+    user_fantasy: Option<String>,
+    quality_bar: Option<String>,
+    failure_condition: Option<String>,
+) -> Result<AmendmentResponse, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+    let proposer = store.project.created_by.clone();
+    let timestamp = now_iso();
+    let seq = store.amendments.len() + 1;
+
+    let patch = ConstitutionPatch {
+        one_sentence_promise,
+        user_fantasy,
+        non_negotiable_outcomes: None,
+        anti_goals: None,
+        quality_bar,
+        failure_condition,
+    };
+
+    match amendments::propose_amendment(
+        &store.project,
+        &store.constitution,
+        &store.amendments,
+        patch,
+        reason.clone(),
+        proposer.clone(),
+        &timestamp,
+        seq,
+    ) {
+        Ok(amendment) => {
+            let id = amendment.id.clone();
+            store.amendments.push(amendment);
+
+            // Audit event
+            let evt = audit_log::amendment_started(
+                &store.project.id,
+                &id,
+                &reason,
+                &proposer,
+                &timestamp,
+                store.audit_events.len() + 1,
+            );
+            store.audit_events.push(evt);
+
+            Ok(AmendmentResponse {
+                success: true,
+                amendment_id: Some(id),
+                status: Some(AmendmentStatus::Proposed),
+                affected_artifact_ids: vec![],
+                impact_summary: None,
+                error: None,
+            })
+        }
+        Err(e) => Ok(AmendmentResponse {
+            success: false,
+            amendment_id: None,
+            status: None,
+            affected_artifact_ids: vec![],
+            impact_summary: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn assess_amendment_impact(
+    state: State<'_, AppState>,
+    amendment_id: String,
+) -> Result<AmendmentResponse, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+
+    let artifacts_snapshot: Vec<_> = store.artifacts.clone();
+
+    let amendment = store
+        .amendments
+        .iter_mut()
+        .find(|a| a.id == amendment_id)
+        .ok_or_else(|| format!("Amendment not found: {}", amendment_id))?;
+
+    match amendments::assess_impact(amendment, &artifacts_snapshot) {
+        Ok(impact) => Ok(AmendmentResponse {
+            success: true,
+            amendment_id: Some(amendment_id),
+            status: Some(AmendmentStatus::ImpactAssessed),
+            affected_artifact_ids: impact.affected_artifact_ids,
+            impact_summary: Some(impact.summary),
+            error: None,
+        }),
+        Err(e) => Ok(AmendmentResponse {
+            success: false,
+            amendment_id: Some(amendment_id),
+            status: None,
+            affected_artifact_ids: vec![],
+            impact_summary: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn apply_amendment(
+    state: State<'_, AppState>,
+    amendment_id: String,
+) -> Result<AmendmentResponse, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+    let timestamp = now_iso();
+
+    // Find amendment index to work around borrow checker
+    let amend_idx = store
+        .amendments
+        .iter()
+        .position(|a| a.id == amendment_id)
+        .ok_or_else(|| format!("Amendment not found: {}", amendment_id))?;
+
+    let new_version_id = format!(
+        "cv{}",
+        store
+            .constitution
+            .version_id
+            .trim_start_matches("cv")
+            .parse::<u32>()
+            .unwrap_or(1)
+            + 1
+    );
+
+    // Take the amendment out to satisfy the borrow checker (need &mut amendment + &mut constitution + &mut artifacts)
+    let mut amendment = store.amendments.remove(amend_idx);
+    let mut constitution = store.constitution.clone();
+
+    match amendments::apply_amendment(
+        &mut amendment,
+        &mut constitution,
+        &mut store.artifacts,
+        &timestamp,
+        &new_version_id,
+    ) {
+        Ok(stale_ids) => {
+            let actor = amendment.proposer.clone();
+            let affected = amendment.invalidated_artifact_ids.clone();
+
+            // Audit event for amendment applied
+            let evt = audit_log::amendment_applied(
+                &store.project.id,
+                &amendment.id,
+                &new_version_id,
+                stale_ids.len(),
+                &actor,
+                &timestamp,
+                store.audit_events.len() + 1,
+            );
+            store.audit_events.push(evt);
+
+            // Audit events for each stale artifact
+            for (i, stale_id) in stale_ids.iter().enumerate() {
+                let reason = format!("Constitution amended: {}", amendment.id);
+                let evt = audit_log::artifact_marked_stale(
+                    &store.project.id,
+                    stale_id,
+                    &reason,
+                    &timestamp,
+                    store.audit_events.len() + i + 1,
+                );
+                store.audit_events.push(evt);
+            }
+
+            // Apply the updated constitution back
+            store.constitution = constitution;
+
+            // Update project's constitution version
+            store.project.current_constitution_version_id = new_version_id;
+            store.project.active_amendment_id = Some(amendment.id.clone());
+            store.project.updated_at = timestamp;
+
+            store.amendments.push(amendment);
+
+            Ok(AmendmentResponse {
+                success: true,
+                amendment_id: Some(amendment_id),
+                status: Some(AmendmentStatus::Applied),
+                affected_artifact_ids: affected,
+                impact_summary: Some(format!("{} artifact(s) marked stale", stale_ids.len())),
+                error: None,
+            })
+        }
+        Err(e) => {
+            // Put constitution and amendment back unchanged
+            store.constitution = constitution;
+            store.amendments.push(amendment);
+            Ok(AmendmentResponse {
+                success: false,
+                amendment_id: Some(amendment_id),
+                status: None,
+                affected_artifact_ids: vec![],
+                impact_summary: None,
+                error: Some(e.to_string()),
+            })
+        }
+    }
+}
+
+#[tauri::command]
+pub fn abandon_amendment(
+    state: State<'_, AppState>,
+    amendment_id: String,
+) -> Result<AmendmentResponse, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+    let timestamp = now_iso();
+
+    let amendment = store
+        .amendments
+        .iter_mut()
+        .find(|a| a.id == amendment_id)
+        .ok_or_else(|| format!("Amendment not found: {}", amendment_id))?;
+
+    match amendments::abandon_amendment(amendment, &timestamp) {
+        Ok(()) => Ok(AmendmentResponse {
+            success: true,
+            amendment_id: Some(amendment_id),
+            status: Some(AmendmentStatus::Abandoned),
+            affected_artifact_ids: vec![],
+            impact_summary: None,
+            error: None,
+        }),
+        Err(e) => Ok(AmendmentResponse {
+            success: false,
+            amendment_id: Some(amendment_id),
+            status: None,
+            affected_artifact_ids: vec![],
+            impact_summary: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn get_audit_timeline(
+    state: State<'_, AppState>,
+) -> Result<AuditTimelineResponse, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    let events: Vec<AuditEventRow> = store
+        .audit_events
+        .iter()
+        .map(|e| AuditEventRow {
+            id: e.id.clone(),
+            event_type: e.event_type,
+            occurred_at: e.occurred_at.clone(),
+            actor_name: match &e.actor {
+                AuditActor::User(u) => u.display_name.clone(),
+                AuditActor::System => "System".into(),
+            },
+            summary: format_event_summary(e),
+        })
+        .collect();
+
+    let total = events.len();
+    Ok(AuditTimelineResponse {
+        events,
+        total_count: total,
+    })
+}
+
+#[tauri::command]
+pub fn get_artifact_history(
+    state: State<'_, AppState>,
+    artifact_id: String,
+) -> Result<AuditTimelineResponse, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    let filtered = audit_log::events_for_artifact(&artifact_id, &store.audit_events);
+    let events: Vec<AuditEventRow> = filtered
+        .iter()
+        .map(|e| AuditEventRow {
+            id: e.id.clone(),
+            event_type: e.event_type,
+            occurred_at: e.occurred_at.clone(),
+            actor_name: match &e.actor {
+                AuditActor::User(u) => u.display_name.clone(),
+                AuditActor::System => "System".into(),
+            },
+            summary: format_event_summary(e),
+        })
+        .collect();
+
+    let total = events.len();
+    Ok(AuditTimelineResponse {
+        events,
+        total_count: total,
+    })
+}
+
+#[tauri::command]
+pub fn save_project(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<SaveLoadResponse, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(&file_path);
+
+    match persistence::save_project(&store, path) {
+        Ok(saved_path) => Ok(SaveLoadResponse {
+            success: true,
+            file_path: Some(saved_path.to_string_lossy().into_owned()),
+            error: None,
+        }),
+        Err(e) => Ok(SaveLoadResponse {
+            success: false,
+            file_path: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn load_project(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<SaveLoadResponse, String> {
+    let path = std::path::Path::new(&file_path);
+
+    match persistence::load_project(path) {
+        Ok(loaded_store) => {
+            let mut store = state.lock().map_err(|e| e.to_string())?;
+            *store = loaded_store;
+            Ok(SaveLoadResponse {
+                success: true,
+                file_path: Some(file_path),
+                error: None,
+            })
+        }
+        Err(e) => Ok(SaveLoadResponse {
+            success: false,
+            file_path: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
 // ─── Helpers ────────────────────────────────────────────────
 
 fn enrich_link(link: &TraceLink, artifacts: &[Artifact]) -> TraceLinkRow {
@@ -412,4 +842,74 @@ fn compute_legal_transitions(artifact: &Artifact) -> Vec<ArtifactState> {
         .filter(|&&target| state_machine::is_legal_transition(artifact.state, target))
         .copied()
         .collect()
+}
+
+fn format_event_summary(event: &AuditEvent) -> String {
+    let artifact_id = event
+        .payload
+        .get("artifactId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    match event.event_type {
+        AuditEventType::ProjectCreated => "Project created".into(),
+        AuditEventType::ConstitutionLocked => "Constitution locked".into(),
+        AuditEventType::ArtifactCreated => format!("Artifact created: {}", artifact_id),
+        AuditEventType::ArtifactUpdated => {
+            let version = event
+                .payload
+                .get("versionNumber")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Artifact {} updated to v{}", artifact_id, version)
+        }
+        AuditEventType::ArtifactCompleted => format!("Artifact {} completed", artifact_id),
+        AuditEventType::ArtifactValidated => format!("Artifact {} validated", artifact_id),
+        AuditEventType::ArtifactApproved => format!("Artifact {} approved", artifact_id),
+        AuditEventType::ArtifactMarkedStale => {
+            let reason = event
+                .payload
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("upstream change");
+            format!("Artifact {} marked stale: {}", artifact_id, reason)
+        }
+        AuditEventType::TraceLinkCreated => "Trace link created".into(),
+        AuditEventType::TraceLinkRemoved => "Trace link removed".into(),
+        AuditEventType::AmendmentStarted => {
+            let reason = event
+                .payload
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            format!("Amendment started: {}", reason)
+        }
+        AuditEventType::AmendmentImpactAssessed => "Amendment impact assessed".into(),
+        AuditEventType::AmendmentApplied => {
+            let count = event
+                .payload
+                .get("invalidatedArtifactCount")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Amendment applied — {} artifacts invalidated", count)
+        }
+        AuditEventType::DriftAlarmRaised => {
+            let explanation = event
+                .payload
+                .get("explanation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            format!("Drift alarm: {}", explanation)
+        }
+        AuditEventType::DriftAlarmResolved => "Drift alarm resolved".into(),
+        AuditEventType::ExportBlocked => "Export blocked".into(),
+        AuditEventType::ReadinessGateComputed => "Readiness gate evaluated".into(),
+        AuditEventType::ReadinessGatePassed => "Readiness gate passed".into(),
+        AuditEventType::ProjectExported => "Project exported".into(),
+    }
+}
+
+fn now_iso() -> String {
+    // In a real app this would use chrono or std::time.
+    // For now, a placeholder that the UI can parse.
+    "2026-03-13T12:00:00Z".into()
 }
