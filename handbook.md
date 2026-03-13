@@ -1,5 +1,35 @@
 # Anchor Handbook
 
+> The complete specification for Anchor's design philosophy, domain model, and enforcement architecture.
+
+---
+
+## Table of Contents
+
+- [What Is Anchor](#what-is-anchor)
+- [The Problem](#the-problem)
+- [Product Constitution](#product-constitution)
+- [Stack](#stack)
+- [Artifact Spine](#artifact-spine)
+- [Artifact State Machine](#artifact-state-machine)
+- [Traceability](#traceability)
+- [Amendment Protocol](#amendment-protocol)
+- [Drift Alarm Taxonomy](#drift-alarm-taxonomy)
+- [Execution Readiness Gate](#execution-readiness-gate)
+- [Why Blocked?](#why-blocked)
+- [Export Package](#export-package)
+- [Review Mode](#review-mode)
+- [UX Principles](#ux-principles)
+- [Domain Entities](#domain-entities)
+- [Backend Law Engine](#backend-law-engine)
+- [UI Shell](#ui-shell)
+- [Build Sequence](#build-sequence)
+- [Audit Events](#audit-events)
+- [Design Decisions](#design-decisions)
+- [Invariants](#invariants)
+
+---
+
 ## What Is Anchor
 
 Anchor is a local-first desktop app that forces constitution-first, fully traceable project design so creative products cannot drift from their intended purpose before execution begins.
@@ -33,10 +63,12 @@ Completing steps in ways that no longer agree with each other is the sneakier fa
 
 ## Stack
 
-- **Frontend:** React + TypeScript (window into law, not source of truth)
-- **Backend:** Tauri / Rust (final authority for validation, hashing, state transitions, export)
-- **Storage:** Local JSON files + optional SQLite
-- **Network:** None except optional update check
+| Layer | Technology | Role |
+|-------|-----------|------|
+| Backend | Rust / Tauri 2 | Final authority — validation, hashing, state transitions, export |
+| Frontend | React 19 + TypeScript | Window into law — forms, graph visualization, "Why blocked?" |
+| Storage | Local JSON + optional SQLite | No cloud dependency |
+| Network | None | Optional update check only |
 
 ## Artifact Spine
 
@@ -58,13 +90,40 @@ No additional first-class artifact types may be introduced without a schema vers
 
 ## Artifact State Machine
 
+> Source: [`src-tauri/src/state_machine.rs`](src-tauri/src/state_machine.rs) (731 LOC, 12 tests)
+
 Each artifact has exactly five states:
 
-- **Draft:** exists but missing required fields
-- **Complete:** all required fields present
-- **Valid:** passes structural, relational, and intent validation
-- **Approved:** human has explicitly signed off (bound to specific content hash + timestamp)
-- **Stale:** upstream change invalidated the approval
+| State | Meaning |
+|-------|---------|
+| **Draft** | Exists but missing required fields |
+| **Complete** | All required fields present |
+| **Valid** | Passes structural, relational, and intent validation |
+| **Approved** | Human has explicitly signed off (bound to content hash + timestamp) |
+| **Stale** | Upstream change invalidated the approval |
+
+### Full Transition Diagram
+
+```
+                ┌──────────────────────────────┐
+                │         ┌──────┐             │
+                │    ┌───→│ Valid │────┐        │
+                │    │    └──┬───┘    │        │
+                ▼    │       │        ▼        │
+┌───────┐   ┌──┴────┴──┐    │   ┌──────────┐  │
+│ Draft │──→│ Complete  │    │   │ Approved │  │
+└───────┘   └───────────┘    │   └────┬─────┘  │
+    ▲            ▲           │        │        │
+    │            │           │        ▼        │
+    │            │           │   ┌─────────┐   │
+    │            └───────────┼───┤  Stale  │───┘
+    │                        │   └─────────┘
+    │                        │        │
+    └────────────────────────┘        │
+              (edit removes fields)   │
+                                      ▼
+                              (reconcile & re-approve)
+```
 
 ### Forward Transitions
 
@@ -76,14 +135,14 @@ Draft → Complete → Valid → Approved
 
 The lifecycle is not a one-way escalator. Artifacts can regress:
 
-```
-Complete → Draft         (content edited, fields removed — back to incomplete)
-Valid → Complete          (upstream content changed, revalidation needed)
-Approved → Stale         (upstream change invalidated this artifact)
-Stale → Complete          (user reconciles content after upstream change)
-Stale → Valid             (content reconciled + passes all three validation layers)
-Stale → Approved          (guarded: requires successful revalidation AND reapproval)
-```
+| Edge | Trigger |
+|------|---------|
+| Complete → Draft | Content edited, required fields removed |
+| Valid → Complete | Upstream content changed, revalidation needed |
+| Approved → Stale | Upstream change invalidated this artifact |
+| Stale → Complete | User reconciles content after upstream change |
+| Stale → Valid | Content reconciled + passes all three validation layers |
+| Stale → Approved | **Guarded** — requires successful revalidation AND explicit reapproval |
 
 These back-edges are not escape hatches. They are the immune system. Without them, the only response to upstream change would be deleting work and starting over.
 
@@ -91,21 +150,25 @@ These back-edges are not escape hatches. They are the immune system. Without the
 
 These are structurally illegal regardless of context:
 
-- Draft → Approved (must complete and validate first)
-- Draft → Valid (must complete first)
-- Complete → Approved (must validate first)
-- Approved → Draft (must go through Stale if upstream changed)
-- No-op transitions (same state → same state) are not legal events
+| Forbidden | Why |
+|-----------|-----|
+| Draft → Approved | Must complete and validate first |
+| Draft → Valid | Must complete first |
+| Complete → Approved | Must validate first |
+| Approved → Draft | Must go through Stale if upstream changed |
+| Same → Same | No-op transitions are not legal events |
 
 ### Validation Layers
 
 Each artifact is validated at three levels:
 
-1. **Structural:** required fields, enum values, version existence, hash integrity
-2. **Relational:** bidirectional traceability links exist, endpoints exist, no orphan nodes, constitution version alignment
-3. **Intent:** human review — does this actually support the Constitution and raise creator output quality?
+1. **Structural** — required fields, enum values, version existence, hash integrity
+2. **Relational** — bidirectional traceability links exist, endpoints exist, no orphan nodes, constitution version alignment
+3. **Intent** — human review: does this actually support the Constitution and raise creator output quality?
 
 ## Traceability
+
+> Source: [`src-tauri/src/traceability.rs`](src-tauri/src/traceability.rs) (515 LOC, 9 tests)
 
 Every meaningful node must have bidirectional traceability to its justification.
 
@@ -139,6 +202,8 @@ Every amendment is recorded with content hash, timestamp, and local identity. Am
 
 ## Drift Alarm Taxonomy
 
+> Source: [`src-tauri/src/drift_rules.rs`](src-tauri/src/drift_rules.rs) (537 LOC, 10 tests)
+
 | Type | Trigger |
 |---|---|
 | **Traceability drift** | Item has no valid upstream justification |
@@ -150,6 +215,8 @@ Every amendment is recorded with content hash, timestamp, and local identity. Am
 Every alarm includes: violated rule ID, rule provenance (which clause produced it), human-readable explanation, and remediation path.
 
 ## Execution Readiness Gate
+
+> Source: [`src-tauri/src/readiness_gate.rs`](src-tauri/src/readiness_gate.rs) (731 LOC, 7 tests)
 
 The gate is computed, not authored. It is the final judge.
 
@@ -214,15 +281,32 @@ The UI is a window into the law. The Rust backend is the law.
 
 ## Domain Entities
 
-Eleven top-level entities: Project, Constitution, Artifact, ArtifactVersion, Approval, Amendment, TraceLink, DriftAlarm, ValidationResult, ExecutionReadinessGate, AuditEvent.
+> Source: [`src-tauri/src/domain.rs`](src-tauri/src/domain.rs) (684 LOC) — Rust structs
+> Source: [`packages/schema/src/anchor-domain.ts`](packages/schema/src/anchor-domain.ts) — Canonical TypeScript types
 
-Full type definitions: [`packages/schema/src/anchor-domain.ts`](packages/schema/src/anchor-domain.ts)
+Eleven top-level entities:
+
+| Entity | Role |
+|--------|------|
+| `Project` | Root container — name, description, constitution ID, created/updated timestamps |
+| `Constitution` | The throne — promise, fantasy, outcomes, anti-goals, quality bar, failure condition, version, locked flag |
+| `Artifact` | Type-tagged container with state, version, content hash, constitution version binding |
+| `ArtifactVersion` | Immutable snapshot — version number, content hash, timestamp |
+| `Approval` | Human sign-off bound to specific content hash, constitution version, timestamp, approver |
+| `Amendment` | Constitutional change record — reason, diff, impact assessment, status |
+| `TraceLink` | Typed edge (6 types) between nodes with optional rationale |
+| `DriftAlarm` | Active violation — rule ID, severity, affected nodes, provenance, remediation |
+| `ValidationResult` | Per-artifact validation output from all three layers |
+| `ExecutionReadinessGate` | Computed gate status with blocking reasons and manifest |
+| `AuditEvent` | Immutable record of every meaningful state change |
 
 ## Backend Law Engine
 
 The Rust backend is the final authority. These four modules form the enforcement core:
 
-### Traceability Graph (`traceability.rs`)
+### Traceability Graph
+
+> [`src-tauri/src/traceability.rs`](src-tauri/src/traceability.rs) — 515 LOC, 9 tests
 
 Owns node/link integrity. For every meaningful node, answers:
 - "What justifies this?" (upstream query)
@@ -230,7 +314,9 @@ Owns node/link integrity. For every meaningful node, answers:
 
 Validates that required trace links exist per artifact type, endpoints resolve to real nodes, and no orphan features/systems/phases/workflows exist. Bidirectional — every link is navigable in both directions.
 
-### Drift Rule Engine (`drift_rules.rs`)
+### Drift Rule Engine
+
+> [`src-tauri/src/drift_rules.rs`](src-tauri/src/drift_rules.rs) — 537 LOC, 10 tests
 
 Turns the drift alarm taxonomy into executable rules. Each rule produces:
 - rule ID, provenance (which constitutional clause), severity
@@ -238,7 +324,9 @@ Turns the drift alarm taxonomy into executable rules. Each rule produces:
 
 Five rule categories: traceability, constitution, sequence, quality, scope. Rules are pure functions — they take project state in and produce alarm lists out.
 
-### Stale Propagation (`stale_propagation.rs`)
+### Stale Propagation
+
+> [`src-tauri/src/stale_propagation.rs`](src-tauri/src/stale_propagation.rs) — 499 LOC, 8 tests
 
 Real dependency walk, not just a reason enum. On any upstream change:
 1. Identify the changed node
@@ -248,7 +336,9 @@ Real dependency walk, not just a reason enum. On any upstream change:
 
 Constitution amendments trigger the nuclear path: everything downstream becomes Stale.
 
-### Execution Readiness Gate (`readiness_gate.rs`)
+### Readiness Gate Evaluator
+
+> [`src-tauri/src/readiness_gate.rs`](src-tauri/src/readiness_gate.rs) — 731 LOC, 7 tests
 
 One pure function that produces:
 - Gate status (blocked/ready)
@@ -260,7 +350,9 @@ One pure function that produces:
 
 Dead simple to call. Impossible for the frontend to fake.
 
-### Export Compiler (`export_compiler.rs`)
+### Export Compiler
+
+> [`src-tauri/src/export_compiler.rs`](src-tauri/src/export_compiler.rs) — 719 LOC, 7 tests
 
 Gate-guarded pure function that renders the canonical export package. Only callable when the readiness gate returns Ready.
 
@@ -282,9 +374,9 @@ The UI is aggressively subordinate to the Rust engine. It never computes readine
 
 ### Architecture
 
-- **Tauri command layer** (`commands.rs`): 4 read-only queries + 2 mutations. The bridge between engine and browser.
-- **Project store** (`store.rs`): In-memory project state behind a Mutex. Seeded with a demo project.
-- **React shell** (`src/`): Vite + React 19 + TypeScript. Three-column layout with bottom status bar.
+- **Tauri command layer** ([`src-tauri/src/commands.rs`](src-tauri/src/commands.rs) — 415 LOC): 4 read-only queries + 2 mutations. The bridge between engine and browser.
+- **Project store** ([`src-tauri/src/store.rs`](src-tauri/src/store.rs) — 198 LOC): In-memory project state behind a Mutex. Seeded with a demo project ("Forge Quest").
+- **React shell** ([`src/`](src/)): Vite + React 19 + TypeScript. Three-column layout with bottom status bar.
 
 ### Tauri Commands
 
@@ -300,11 +392,13 @@ Mutations:
 
 ### Five Views
 
-1. **Artifact Index** — authoritative list with state, version, approval, link counts, alarms
-2. **Artifact Detail** — metadata, validation summary, trace links (enriched with titles), alarms, legal transition buttons, approve action
-3. **Readiness Gate** — pass/fail banner, blocking reasons with rule provenance and remediation steps, stale/outdated summaries, export manifest
-4. **Export Panel** — ready/blocked status, 13-file package preview with sizes, or blocking reasons
-5. **Graph View** — focused on selected node + one hop in/out, click to navigate neighbors
+| View | File | Purpose |
+|------|------|--------|
+| Artifact Index | [`ArtifactIndex.tsx`](src/views/ArtifactIndex.tsx) | Authoritative list — state, version, approval, link counts, alarms |
+| Artifact Detail | [`ArtifactDetail.tsx`](src/views/ArtifactDetail.tsx) | Metadata, validation, trace links (enriched), alarms, transitions, approve |
+| Readiness Gate | [`ReadinessGate.tsx`](src/views/ReadinessGate.tsx) | Pass/fail banner, blocking reasons with rule provenance and remediation |
+| Export Panel | [`ExportPanel.tsx`](src/views/ExportPanel.tsx) | Ready/blocked status, 13-file package preview or blocking reasons |
+| Graph View | [`GraphView.tsx`](src/views/GraphView.tsx) | Selected node + one hop in/out, click to navigate neighbors |
 
 ### UI Rules
 
@@ -327,10 +421,54 @@ Mutations:
 
 ## Audit Events
 
-Every meaningful state change is recorded:
+Every meaningful state change is recorded as an immutable `AuditEvent`:
 
-`project_created` · `constitution_locked` · `artifact_created` · `artifact_updated` · `artifact_completed` · `artifact_validated` · `artifact_approved` · `artifact_marked_stale` · `trace_link_created` · `trace_link_removed` · `amendment_started` · `amendment_impact_assessed` · `amendment_applied` · `drift_alarm_raised` · `drift_alarm_resolved` · `export_blocked` · `readiness_gate_computed` · `readiness_gate_passed` · `project_exported`
+| Category | Events |
+|----------|--------|
+| Project lifecycle | `project_created` |
+| Constitution | `constitution_locked` · `amendment_started` · `amendment_impact_assessed` · `amendment_applied` |
+| Artifact state | `artifact_created` · `artifact_updated` · `artifact_completed` · `artifact_validated` · `artifact_approved` · `artifact_marked_stale` |
+| Traceability | `trace_link_created` · `trace_link_removed` |
+| Drift | `drift_alarm_raised` · `drift_alarm_resolved` |
+| Gate & export | `readiness_gate_computed` · `readiness_gate_passed` · `export_blocked` · `project_exported` |
 
 ## Final Constraint
 
 Anchor is not a planning scrapbook. If the software ever allows users to complete ceremony without preserving coherence, it has failed its purpose.
+
+---
+
+## Design Decisions
+
+Key choices and why they were made:
+
+**Rust owns all law, React owns no authority.** The UI cannot compute readiness, invent transitions, or decide export eligibility. Every answer is rendered from backend results. This makes it impossible for a frontend bug to silently bypass a rule.
+
+**Pure functions for engines, Mutex for state.** The drift engine, gate evaluator, and export compiler are all pure functions — input in, result out. The only mutable state lives behind a `Mutex<ProjectStore>` in the Tauri process. This makes testing trivial and concurrency bugs impossible at the engine layer.
+
+**Bidirectional traceability is mandatory, not optional.** Every node must answer both "what justifies this?" and "what depends on this?" — orphan features, unjustified systems, and unvalidated phases are structural errors, not warnings. This catches drift that would otherwise be invisible until export.
+
+**Stale propagation is recursive, not one-hop.** When an upstream artifact changes, the stale walk follows the traceability graph to all transitive dependents. A constitution amendment marks everything stale. This is expensive but honest — shallow invalidation creates false confidence.
+
+**Gate is computed, never authored.** The Execution Readiness Gate is a pure function of project state. No human can "override" it. This is the core guarantee: if the gate says Ready, the project is coherent.
+
+**Export is a consequence, not a feature.** The export compiler runs the gate internally. If blocked, it returns the gate evaluation instead of the package. There is no backdoor, no "export anyway" flag, no admin override.
+
+**Visible-but-disabled > hidden.** Illegal transitions are shown in the UI with explanations of why they're blocked, rather than hidden. Hidden constraints create confusion; explicit constraints create trust.
+
+**9 artifact types, locked.** The artifact spine is an enum, not a config. Adding a 10th type requires a schema version upgrade. This prevents scope creep in the design model itself.
+
+## Invariants
+
+These must hold at all times. If any invariant is violated, it is a bug.
+
+1. **No artifact can reach Approved without passing all three validation layers** (structural, relational, intent)
+2. **No export can be produced while any artifact is Stale**
+3. **No export can be produced while any blocking drift alarm is active**
+4. **Every TraceLink is bidirectionally navigable** — if A→B exists, querying B returns A as an upstream
+5. **Every Approval is bound to a specific content hash and constitution version** — if either changes, the approval is invalid
+6. **Stale propagation is transitive** — if A invalidates B and B was upstream of C, C also becomes Stale
+7. **Amendment impact assessment lists all affected artifacts before the amendment is applied**
+8. **The gate evaluator runs all checks on every call** — it never caches, shortcuts, or returns stale results
+9. **Audit events are append-only** — no event can be deleted or modified after creation
+10. **The frontend never modifies artifact state directly** — all mutations go through Tauri commands backed by the Rust engine

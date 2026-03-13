@@ -5,6 +5,7 @@ target/
 # Build output
 dist/
 dist-tauri/
+*.tsbuildinfo
 
 # Environment
 .env
@@ -14,9 +15,13 @@ dist-tauri/
 # OS
 Thumbs.db
 .DS_Store
+Desktop.ini
+ehthumbs.db
 
 # IDE
 .idea/
+.vscode/settings.json
+.vscode/launch.json
 *.swp
 *.swo
 *~
@@ -25,6 +30,11 @@ Thumbs.db
 src-tauri/target/
 src-tauri/WixTools/
 src-tauri/Frameworks/
+src-tauri/gen/
+
+# Logs
+*.log
+npm-debug.log*
 
 # Config (user-specific)
 llm-sync-drive.yaml
