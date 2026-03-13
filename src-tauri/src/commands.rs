@@ -10,14 +10,17 @@ use tauri::State;
 
 use crate::amendments;
 use crate::audit_log;
+use crate::diff;
 use crate::domain::*;
 use crate::editing;
 use crate::export_compiler::{self, ExportInput};
+use crate::impact;
 use crate::persistence;
 use crate::readiness_gate::{self, GateEvaluation};
 use crate::state_machine;
 use crate::store::ProjectStore;
 use crate::traceability;
+use crate::validation;
 
 pub type AppState = Mutex<ProjectStore>;
 
@@ -802,6 +805,209 @@ pub fn load_project(
             error: Some(e.to_string()),
         }),
     }
+}
+
+// ─── Step 11: Explainability & Recovery Commands ────────────
+
+#[tauri::command]
+pub fn get_validation_report(
+    state: State<'_, AppState>,
+    artifact_id: String,
+) -> Result<validation::ValidationReport, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    validation::validate_artifact(
+        &artifact_id,
+        &store.artifacts,
+        &store.versions,
+        &store.approvals,
+        &store.links,
+        &store.constitution,
+    )
+    .ok_or_else(|| format!("Artifact not found: {}", artifact_id))
+}
+
+#[tauri::command]
+pub fn get_version_diff(
+    state: State<'_, AppState>,
+    artifact_id: String,
+    from_version_id: String,
+    to_version_id: String,
+) -> Result<diff::VersionDiff, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    diff::diff_versions(
+        &artifact_id,
+        &from_version_id,
+        &to_version_id,
+        &store.versions,
+        &store.approvals,
+    )
+    .ok_or_else(|| "Version(s) not found".into())
+}
+
+#[tauri::command]
+pub fn get_latest_diff(
+    state: State<'_, AppState>,
+    artifact_id: String,
+) -> Result<Option<diff::VersionDiff>, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    Ok(diff::diff_latest(
+        &artifact_id,
+        &store.artifacts,
+        &store.versions,
+        &store.approvals,
+    ))
+}
+
+#[tauri::command]
+pub fn get_edit_impact(
+    state: State<'_, AppState>,
+    artifact_id: String,
+) -> Result<impact::ImpactReport, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    impact::impact_of_edit(
+        &artifact_id,
+        &store.artifacts,
+        &store.links,
+        &store.approvals,
+    )
+    .ok_or_else(|| format!("Artifact not found: {}", artifact_id))
+}
+
+#[tauri::command]
+pub fn get_amendment_impact(
+    state: State<'_, AppState>,
+) -> Result<impact::ImpactReport, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    Ok(impact::impact_of_amendment(
+        &store.artifacts,
+        &store.links,
+        &store.approvals,
+        &store.constitution,
+    ))
+}
+
+#[tauri::command]
+pub fn dry_run_import(
+    file_path: String,
+) -> Result<persistence::ImportDiagnostic, String> {
+    let path = std::path::Path::new(&file_path);
+    Ok(persistence::dry_run_load(path))
+}
+
+#[tauri::command]
+pub fn load_project_with_repair(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<ImportWithRepairResponse, String> {
+    let path = std::path::Path::new(&file_path);
+    match persistence::load_project_with_repair(path) {
+        Ok((loaded_store, issues)) => {
+            let mut store = state.lock().map_err(|e| e.to_string())?;
+            *store = loaded_store;
+            Ok(ImportWithRepairResponse {
+                success: true,
+                file_path: Some(file_path),
+                issues,
+                error: None,
+            })
+        }
+        Err(e) => Ok(ImportWithRepairResponse {
+            success: false,
+            file_path: None,
+            issues: vec![],
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportWithRepairResponse {
+    pub success: bool,
+    pub file_path: Option<String>,
+    pub issues: Vec<persistence::ImportIssue>,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub fn switch_demo_scenario(
+    state: State<'_, AppState>,
+    scenario_name: String,
+) -> Result<SwitchScenarioResponse, String> {
+    match ProjectStore::load_scenario(&scenario_name) {
+        Some(new_store) => {
+            let project_name = new_store.project.name.clone();
+            let artifact_count = new_store.artifacts.len();
+            let mut store = state.lock().map_err(|e| e.to_string())?;
+            *store = new_store;
+            Ok(SwitchScenarioResponse {
+                success: true,
+                scenario_name: scenario_name.clone(),
+                project_name,
+                artifact_count,
+                error: None,
+            })
+        }
+        None => Ok(SwitchScenarioResponse {
+            success: false,
+            scenario_name,
+            project_name: String::new(),
+            artifact_count: 0,
+            error: Some(format!(
+                "Unknown scenario. Available: {}",
+                crate::store::DEMO_SCENARIOS.join(", ")
+            )),
+        }),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchScenarioResponse {
+    pub success: bool,
+    pub scenario_name: String,
+    pub project_name: String,
+    pub artifact_count: usize,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub fn list_demo_scenarios() -> Vec<ScenarioInfo> {
+    vec![
+        ScenarioInfo {
+            id: "forge-quest".into(),
+            name: "Forge Quest".into(),
+            description: "Mixed states — gate blocked, some artifacts approved, some in progress".into(),
+            flavor: "The original demo. A crafting RPG with constitutional governance.".into(),
+        },
+        ScenarioInfo {
+            id: "crystal-sanctum".into(),
+            name: "Crystal Sanctum".into(),
+            description: "Healthy project — all artifacts approved, gate ready for export".into(),
+            flavor: "What a finished project looks like. Everything green.".into(),
+        },
+        ScenarioInfo {
+            id: "shadow-protocol".into(),
+            name: "Shadow Protocol".into(),
+            description: "Broken traceability — missing links, orphan artifacts, drift alarms".into(),
+            flavor: "What happens when you skip the governance. The law catches you.".into(),
+        },
+        ScenarioInfo {
+            id: "ember-saga".into(),
+            name: "Ember Saga".into(),
+            description: "Post-amendment fallout — constitution changed, mass stale propagation".into(),
+            flavor: "The nuclear option happened. Now reconicle everything.".into(),
+        },
+    ]
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub flavor: String,
 }
 
 // ─── Helpers ────────────────────────────────────────────────

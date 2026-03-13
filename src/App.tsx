@@ -8,8 +8,11 @@ import { ExportPanel } from "./views/ExportPanel";
 import { GraphView } from "./views/GraphView";
 import { AuditTimeline } from "./views/AuditTimeline";
 import { AmendmentPanel } from "./views/AmendmentPanel";
+import { ValidationDetail } from "./views/ValidationDetail";
+import { ImpactView } from "./views/ImpactView";
+import { ScenarioSwitcher } from "./views/ScenarioSwitcher";
 
-type View = "index" | "detail" | "gate" | "export" | "graph" | "timeline" | "amend";
+type View = "index" | "detail" | "gate" | "export" | "graph" | "timeline" | "amend" | "validate" | "impact" | "scenarios";
 
 export default function App() {
   const [view, setView] = useState<View>("index");
@@ -72,6 +75,7 @@ export default function App() {
     { key: "amend", label: "Amendments" },
     { key: "timeline", label: "Audit Timeline" },
     { key: "graph", label: "Graph View" },
+    { key: "scenarios", label: "Demo Scenarios" },
   ];
 
   return (
@@ -133,6 +137,8 @@ export default function App() {
             artifactId={selectedId}
             onBack={() => setView("index")}
             onRefresh={refreshAll}
+            onValidate={(id) => { setSelectedId(id); setView("validate"); }}
+            onImpact={(id) => { setSelectedId(id); setView("impact"); }}
           />
         )}
         {view === "gate" && <ReadinessGate />}
@@ -143,6 +149,24 @@ export default function App() {
           <GraphView
             artifacts={snapshot.artifacts}
             onSelect={selectArtifact}
+          />
+        )}
+        {view === "validate" && selectedId && (
+          <ValidationDetail
+            artifactId={selectedId}
+            onBack={() => setView("detail")}
+          />
+        )}
+        {view === "impact" && selectedId && (
+          <ImpactView
+            artifactId={selectedId}
+            mode="edit"
+            onBack={() => setView("detail")}
+          />
+        )}
+        {view === "scenarios" && (
+          <ScenarioSwitcher
+            onSwitch={() => { refreshAll(); setView("index"); }}
           />
         )}
       </main>

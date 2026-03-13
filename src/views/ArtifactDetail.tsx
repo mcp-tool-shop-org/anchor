@@ -6,26 +6,33 @@ import type {
   EditResponse,
   AuditTimelineResponse,
   AuditEventRow,
+  VersionDiff,
 } from "../types";
 
 export function ArtifactDetail({
   artifactId,
   onBack,
   onRefresh,
+  onValidate,
+  onImpact,
 }: {
   artifactId: string;
   onBack: () => void;
   onRefresh: () => void;
+  onValidate?: (id: string) => void;
+  onImpact?: (id: string) => void;
 }) {
   const [detail, setDetail] = useState<ArtifactDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [history, setHistory] = useState<AuditEventRow[]>([]);
+  const [latestDiff, setLatestDiff] = useState<VersionDiff | null>(null);
 
   useEffect(() => {
     loadDetail();
     loadHistory();
+    loadDiff();
   }, [artifactId]);
 
   async function loadDetail() {
@@ -48,6 +55,15 @@ export function ArtifactDetail({
       setHistory(h.events);
     } catch {
       // History may be empty for new artifacts
+    }
+  }
+
+  async function loadDiff() {
+    try {
+      const d = await invoke<VersionDiff | null>("get_latest_diff", { artifactId });
+      setLatestDiff(d);
+    } catch {
+      setLatestDiff(null);
     }
   }
 
@@ -169,6 +185,77 @@ export function ArtifactDetail({
           <span className="empty">No legal transitions from {artifact.state}</span>
         )}
       </div>
+
+      {/* Explainability buttons */}
+      <h2>Explainability</h2>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {onValidate && (
+          <button className="btn btn-ghost" onClick={() => onValidate(artifactId)}>
+            Why not valid?
+          </button>
+        )}
+        {onImpact && (
+          <button className="btn btn-ghost" onClick={() => onImpact(artifactId)}>
+            Blast Radius
+          </button>
+        )}
+      </div>
+
+      {/* Latest Diff */}
+      {latestDiff && (
+        <>
+          <h2>Latest Changes (v{latestDiff.fromVersion.versionNumber} → v{latestDiff.toVersion.versionNumber})</h2>
+          {latestDiff.approvalImpact.approvalInvalidated && (
+            <div style={{
+              padding: "6px 12px",
+              background: "rgba(255, 60, 60, 0.15)",
+              borderLeft: "3px solid var(--red)",
+              fontSize: 12,
+              marginBottom: 8,
+            }}>
+              Approval invalidated: {latestDiff.approvalImpact.reason}
+            </div>
+          )}
+          {latestDiff.contentChanges.length > 0 && (
+            <div style={{ fontSize: 12, marginBottom: 8 }}>
+              {latestDiff.contentChanges.map((c, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "80px 1fr 1fr",
+                    gap: 8,
+                    padding: "3px 0",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  <span style={{
+                    color: c.changeType === "added" ? "var(--green)" : c.changeType === "removed" ? "var(--red)" : "var(--orange)",
+                    fontWeight: 600,
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                  }}>
+                    {c.changeType}
+                  </span>
+                  <span style={{ fontFamily: "monospace", fontSize: 11 }}>{c.fieldPath}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                    {c.changeType === "modified" && `${c.oldValue ?? ""} → ${c.newValue ?? ""}`}
+                    {c.changeType === "added" && (c.newValue ?? "")}
+                    {c.changeType === "removed" && (c.oldValue ?? "")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {latestDiff.metadataChanges.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+              {latestDiff.metadataChanges.map((m, i) => (
+                <div key={i}>{m.field}: {m.oldValue} → {m.newValue}</div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {/* Outgoing Links */}
       <h2>Outgoing Trace Links ({outgoingLinks.length})</h2>
