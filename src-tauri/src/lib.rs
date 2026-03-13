@@ -7,8 +7,10 @@ pub mod drift_rules;
 pub mod editing;
 pub mod export_compiler;
 pub mod impact;
+pub mod link_authoring;
 pub mod persistence;
 pub mod readiness_gate;
+pub mod recovery;
 pub mod stale_propagation;
 pub mod state_machine;
 pub mod store;
@@ -47,6 +49,13 @@ pub fn run() {
             commands::load_project_with_repair,
             commands::switch_demo_scenario,
             commands::list_demo_scenarios,
+            // Step 12: Operator Fluency
+            commands::get_project_health,
+            commands::get_recovery_actions,
+            commands::get_allowed_links,
+            commands::get_missing_links,
+            commands::add_trace_link,
+            commands::remove_trace_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Anchor");

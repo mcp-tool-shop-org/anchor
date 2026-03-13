@@ -15,8 +15,10 @@ use crate::domain::*;
 use crate::editing;
 use crate::export_compiler::{self, ExportInput};
 use crate::impact;
+use crate::link_authoring;
 use crate::persistence;
 use crate::readiness_gate::{self, GateEvaluation};
+use crate::recovery;
 use crate::state_machine;
 use crate::store::ProjectStore;
 use crate::traceability;
@@ -1118,4 +1120,134 @@ fn now_iso() -> String {
     // In a real app this would use chrono or std::time.
     // For now, a placeholder that the UI can parse.
     "2026-03-13T12:00:00Z".into()
+}
+
+// ─── Step 12: Operator Fluency Commands ─────────────────────
+
+#[tauri::command]
+pub fn get_project_health(
+    state: State<'_, AppState>,
+) -> Result<recovery::ProjectHealth, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    Ok(recovery::project_health(
+        &store.artifacts,
+        &store.versions,
+        &store.approvals,
+        &store.links,
+        &store.constitution,
+        &store.alarms,
+        &store.amendments,
+    ))
+}
+
+#[tauri::command]
+pub fn get_recovery_actions(
+    state: State<'_, AppState>,
+    artifact_id: String,
+) -> Result<Vec<recovery::RecoveryAction>, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    let artifact = store
+        .artifacts
+        .iter()
+        .find(|a| a.id == artifact_id)
+        .ok_or_else(|| format!("Artifact not found: {}", artifact_id))?;
+    Ok(recovery::next_actions_for_artifact(
+        artifact,
+        &store.artifacts,
+        &store.versions,
+        &store.approvals,
+        &store.links,
+        &store.alarms,
+    ))
+}
+
+#[tauri::command]
+pub fn get_allowed_links(
+    state: State<'_, AppState>,
+    artifact_id: String,
+) -> Result<link_authoring::AllowedLinks, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    link_authoring::get_allowed_links(&artifact_id, &store.artifacts, &store.links)
+        .ok_or_else(|| format!("Artifact not found: {}", artifact_id))
+}
+
+#[tauri::command]
+pub fn get_missing_links(
+    state: State<'_, AppState>,
+) -> Result<Vec<link_authoring::LinkSuggestion>, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    Ok(link_authoring::get_missing_links(&store.artifacts, &store.links))
+}
+
+#[tauri::command]
+pub fn add_trace_link(
+    state: State<'_, AppState>,
+    source_id: String,
+    target_id: String,
+    link_type: TraceLinkType,
+    rationale: String,
+) -> Result<link_authoring::AddLinkResult, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+    let actor = LocalIdentity {
+        id: "user-1".into(),
+        display_name: "Operator".into(),
+    };
+    let result = link_authoring::add_link(
+        &source_id, &target_id, link_type, &rationale,
+        &store.artifacts, &store.links, &actor,
+    );
+    if result.success {
+        if let Some(ref link) = result.link {
+            store.links.push(link.clone());
+            // Emit audit event
+            let seq = store.audit_events.len() + 1;
+            let pid = store.project.id.clone();
+            let evt = audit_log::emit(
+                &pid,
+                AuditEventType::TraceLinkCreated,
+                AuditActor::User(actor),
+                serde_json::json!({
+                    "linkId": link.id,
+                    "sourceId": source_id,
+                    "targetId": target_id,
+                    "linkType": link_type,
+                }),
+                &now_iso(),
+                seq,
+            );
+            store.audit_events.push(evt);
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn remove_trace_link(
+    state: State<'_, AppState>,
+    link_id: String,
+) -> Result<link_authoring::RemoveLinkResult, String> {
+    let mut store = state.lock().map_err(|e| e.to_string())?;
+    let result = link_authoring::check_removal_impact(&link_id, &store.artifacts, &store.links);
+    if result.success {
+        let removed = store.links.iter().find(|l| l.id == link_id).cloned();
+        store.links.retain(|l| l.id != link_id);
+        if let Some(link) = removed {
+            let seq = store.audit_events.len() + 1;
+            let pid = store.project.id.clone();
+            let evt = audit_log::emit(
+                &pid,
+                AuditEventType::TraceLinkRemoved,
+                AuditActor::System,
+                serde_json::json!({
+                    "linkId": link.id,
+                    "sourceId": link.source_node_id,
+                    "targetId": link.target_node_id,
+                }),
+                &now_iso(),
+                seq,
+            );
+            store.audit_events.push(evt);
+        }
+    }
+    Ok(result)
 }

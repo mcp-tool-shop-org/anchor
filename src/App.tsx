@@ -11,18 +11,34 @@ import { AmendmentPanel } from "./views/AmendmentPanel";
 import { ValidationDetail } from "./views/ValidationDetail";
 import { ImpactView } from "./views/ImpactView";
 import { ScenarioSwitcher } from "./views/ScenarioSwitcher";
+import { CommandPalette } from "./views/CommandPalette";
+import { ProjectHealthView } from "./views/ProjectHealthView";
+import { LinkAuthoringView } from "./views/LinkAuthoringView";
 
-type View = "index" | "detail" | "gate" | "export" | "graph" | "timeline" | "amend" | "validate" | "impact" | "scenarios";
+type View = "index" | "detail" | "gate" | "export" | "graph" | "timeline" | "amend" | "validate" | "impact" | "scenarios" | "health" | "links";
 
 export default function App() {
   const [view, setView] = useState<View>("index");
   const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [gate, setGate] = useState<GateEvaluation | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     loadSnapshot();
     loadGate();
+  }, []);
+
+  // Global keyboard shortcut: Ctrl+K opens command palette
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   async function loadSnapshot() {
@@ -38,6 +54,11 @@ export default function App() {
   function selectArtifact(id: string) {
     setSelectedId(id);
     setView("detail");
+  }
+
+  function navigate(targetView: string, artifactId?: string) {
+    if (artifactId) setSelectedId(artifactId);
+    setView(targetView as View);
   }
 
   function refreshAll() {
@@ -69,8 +90,10 @@ export default function App() {
   }
 
   const navItems: { key: View; label: string }[] = [
+    { key: "health", label: "Project Health" },
     { key: "index", label: "Artifact Index" },
     { key: "gate", label: "Readiness Gate" },
+    { key: "links", label: "Link Authoring" },
     { key: "export", label: "Export Package" },
     { key: "amend", label: "Amendments" },
     { key: "timeline", label: "Audit Timeline" },
@@ -83,6 +106,12 @@ export default function App() {
       {/* ─── Sidebar ──────────────────────────────── */}
       <nav className="sidebar">
         <h2>Anchor</h2>
+        <button
+          style={{ fontSize: 10, padding: "2px 8px", marginBottom: 8, width: "100%", textAlign: "left", color: "var(--text-dim)" }}
+          onClick={() => setPaletteOpen(true)}
+        >
+          Ctrl+K — Command Palette
+        </button>
         {navItems.map((item) => (
           <button
             key={item.key}
@@ -168,6 +197,12 @@ export default function App() {
           <ScenarioSwitcher
             onSwitch={() => { refreshAll(); setView("index"); }}
           />
+        )}
+        {view === "health" && (
+          <ProjectHealthView onNavigate={navigate} />
+        )}
+        {view === "links" && (
+          <LinkAuthoringView onNavigate={navigate} />
         )}
       </main>
 
@@ -259,6 +294,15 @@ export default function App() {
           </>
         )}
       </footer>
+
+      {/* ─── Command Palette ──────────────────────── */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        snapshot={snapshot}
+        onNavigate={navigate}
+        onRefresh={refreshAll}
+      />
     </div>
   );
 }

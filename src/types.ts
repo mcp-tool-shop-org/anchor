@@ -322,3 +322,91 @@ export interface ScenarioInfo {
   description: string;
   flavor: string;
 }
+
+// ─── Step 12: Operator Fluency ──────────────────────────────
+
+export type ActionType =
+  | 'edit_content'
+  | 'transition_state'
+  | 'add_trace_link'
+  | 'revalidate'
+  | 'reapprove'
+  | 'reconcile_stale'
+  | 'propose_amendment';
+
+export interface RecoveryAction {
+  actionType: ActionType;
+  targetArtifactId: string;
+  targetArtifactTitle: string;
+  title: string;
+  description: string;
+  priority: number;
+  prerequisites: string[];
+}
+
+export type HealthStatus = 'healthy' | 'needs_attention' | 'critical';
+
+export interface ProjectHealth {
+  status: HealthStatus;
+  gateStatus: string;
+  totalArtifacts: number;
+  readyArtifacts: number;
+  staleArtifacts: number;
+  blockedArtifacts: number;
+  activeAlarms: number;
+  missingLinks: number;
+  nextActions: RecoveryAction[];
+  summary: string;
+}
+
+export interface AddLinkResult {
+  success: boolean;
+  link: TraceLink | null;
+  error: string | null;
+}
+
+export interface TraceLink {
+  id: string;
+  projectId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  linkType: string;
+  rationale: string;
+  createdBy: { id: string; displayName: string };
+  createdAt: string;
+}
+
+export interface RemoveLinkResult {
+  success: boolean;
+  warning: string | null;
+  orphanedArtifacts: string[];
+}
+
+export interface LinkSuggestion {
+  sourceArtifactId: string;
+  sourceTitle: string;
+  suggestedLinkType: string;
+  suggestedTargetType: string;
+  candidateTargets: LinkTarget[];
+  ruleDescription: string;
+}
+
+export interface LinkTarget {
+  artifactId: string;
+  title: string;
+  artifactType: string;
+}
+
+export interface AllowedLinks {
+  artifactId: string;
+  artifactType: string;
+  allowed: AllowedLinkOption[];
+}
+
+export interface AllowedLinkOption {
+  linkType: string;
+  targetTypes: string[];
+  candidates: LinkTarget[];
+  required: boolean;
+  alreadySatisfied: boolean;
+}
