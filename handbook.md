@@ -60,22 +60,42 @@ No additional first-class artifact types may be introduced without a schema vers
 
 Each artifact has exactly five states:
 
-```
-Draft → Complete → Valid → Approved → (upstream change) → Stale
-```
-
 - **Draft:** exists but missing required fields
 - **Complete:** all required fields present
 - **Valid:** passes structural, relational, and intent validation
 - **Approved:** human has explicitly signed off (bound to specific content hash + timestamp)
 - **Stale:** upstream change invalidated the approval
 
+### Forward Transitions
+
+```
+Draft → Complete → Valid → Approved
+```
+
+### Regression and Recovery Edges
+
+The lifecycle is not a one-way escalator. Artifacts can regress:
+
+```
+Complete → Draft         (content edited, fields removed — back to incomplete)
+Valid → Complete          (upstream content changed, revalidation needed)
+Approved → Stale         (upstream change invalidated this artifact)
+Stale → Complete          (user reconciles content after upstream change)
+Stale → Valid             (content reconciled + passes all three validation layers)
+Stale → Approved          (guarded: requires successful revalidation AND reapproval)
+```
+
+These back-edges are not escape hatches. They are the immune system. Without them, the only response to upstream change would be deleting work and starting over.
+
 ### Forbidden Transitions
+
+These are structurally illegal regardless of context:
 
 - Draft → Approved (must complete and validate first)
 - Draft → Valid (must complete first)
 - Complete → Approved (must validate first)
 - Approved → Draft (must go through Stale if upstream changed)
+- No-op transitions (same state → same state) are not legal events
 
 ### Validation Layers
 
@@ -198,15 +218,57 @@ Eleven top-level entities: Project, Constitution, Artifact, ArtifactVersion, App
 
 Full type definitions: [`packages/schema/src/anchor-domain.ts`](packages/schema/src/anchor-domain.ts)
 
+## Backend Law Engine
+
+The Rust backend is the final authority. These four modules form the enforcement core:
+
+### Traceability Graph (`traceability.rs`)
+
+Owns node/link integrity. For every meaningful node, answers:
+- "What justifies this?" (upstream query)
+- "What depends on this?" (downstream query)
+
+Validates that required trace links exist per artifact type, endpoints resolve to real nodes, and no orphan features/systems/phases/workflows exist. Bidirectional — every link is navigable in both directions.
+
+### Drift Rule Engine (`drift_rules.rs`)
+
+Turns the drift alarm taxonomy into executable rules. Each rule produces:
+- rule ID, provenance (which constitutional clause), severity
+- affected node IDs, human-readable explanation, remediation steps
+
+Five rule categories: traceability, constitution, sequence, quality, scope. Rules are pure functions — they take project state in and produce alarm lists out.
+
+### Stale Propagation (`stale_propagation.rs`)
+
+Real dependency walk, not just a reason enum. On any upstream change:
+1. Identify the changed node
+2. Walk the traceability graph to find all dependents
+3. Mark each Valid/Approved dependent as Stale with the specific reason
+4. Recurse: if a newly-stale node had its own dependents, propagate further
+
+Constitution amendments trigger the nuclear path: everything downstream becomes Stale.
+
+### Execution Readiness Gate (`readiness_gate.rs`)
+
+One pure function that produces:
+- Gate status (blocked/ready)
+- Blocking reasons with rule provenance
+- Stale artifact summary
+- Outdated approval list
+- Active blocking alarms
+- Export manifest preview
+
+Dead simple to call. Impossible for the frontend to fake.
+
 ## Build Sequence
 
 1. ✅ Canonical TypeScript types — `packages/schema/src/anchor-domain.ts`
 2. ✅ Rust domain structs — `src-tauri/src/domain.rs`
 3. ✅ Artifact lifecycle state machine — `src-tauri/src/state_machine.rs`
-4. Traceability graph model
-5. Drift alarm rule engine
-6. Stale propagation logic
-7. Execution readiness gate evaluator
+4. ✅ Traceability graph model — `src-tauri/src/traceability.rs`
+5. ✅ Drift alarm rule engine — `src-tauri/src/drift_rules.rs`
+6. ✅ Stale propagation — `src-tauri/src/stale_propagation.rs`
+7. ✅ Execution readiness gate — `src-tauri/src/readiness_gate.rs`
 8. Export compiler
 9. Full UI shell wired to backend law
 

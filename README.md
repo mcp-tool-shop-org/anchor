@@ -60,19 +60,23 @@ src-tauri/
   src/
     domain.rs             # Rust domain structs (mirrors TS types)
     state_machine.rs      # Lifecycle transitions, stale propagation, gate computation
+    traceability.rs       # Traceability graph validation + bidirectional queries
+    drift_rules.rs        # Drift alarm rule engine (5 categories)
+    stale_propagation.rs  # Recursive dependency walk + stale marking
+    readiness_gate.rs     # Execution readiness gate evaluator
 handbook.md               # Full product handbook
 ```
 
 ## Status
 
-Schema Pack v1 complete:
+Schema Pack v1 + Law Engine complete:
 - [x] Canonical TypeScript types (11 enums, 11 domain entities, 9 artifact content shapes)
 - [x] Rust domain structs with serde
 - [x] Artifact lifecycle state machine with tests
-- [ ] Traceability graph model
-- [ ] Drift alarm rule engine
-- [ ] Stale propagation logic
-- [ ] Execution readiness gate evaluator
+- [x] Traceability graph model (bidirectional queries, link validation, explainability checks)
+- [x] Drift alarm rule engine (traceability, constitution, sequence, scope drift detection)
+- [x] Stale propagation (recursive dependency walk, constitution amendment nuclear path)
+- [x] Execution readiness gate evaluator (6 blocking checks, export manifest preview)
 - [ ] Export compiler
 - [ ] UI shell
 
