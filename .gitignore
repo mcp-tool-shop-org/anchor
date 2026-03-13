@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+target/
+
+# Build output
+dist/
+dist-tauri/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Tauri
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/Frameworks/
+
+# Config (user-specific)
+llm-sync-drive.yaml

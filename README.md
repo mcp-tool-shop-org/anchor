@@ -1,0 +1,85 @@
+# Anchor
+
+A drift-prevention engine for serious creative software design.
+
+Anchor is a local-first desktop app that forces constitution-first, fully traceable project design so creative products cannot drift from their intended purpose before execution begins.
+
+## What It Does
+
+You open Anchor with a serious creative project, and it guides you through a disciplined sequence that produces a complete, coherent, handover-ready plan — every decision justified, traceable, and locked to the original promise.
+
+**This is not a planning app.** It is enforcement software.
+
+## Core Idea
+
+Progress means coherence maintained under change, not "forms got filled."
+
+A user can fill every field, mark everything "complete," and still produce garbage if the artifacts no longer agree with each other. Anchor prevents that by enforcing three layers of validation (structural, relational, intent) and blocking export until everything is coherent.
+
+## The Artifact Spine
+
+Every project contains exactly nine artifacts, worked in strict order:
+
+1. **Product Constitution** — the throne
+2. **User Fantasy + Core Workflows**
+3. **Feature Map**
+4. **System Architecture Map**
+5. **UX State Map**
+6. **Phase Roadmap + Contracts**
+7. **Acceptance Checklists**
+8. **Drift Alarm Definitions**
+9. **Execution Readiness Gate** — computed, not authored
+
+No export until the gate clears. No gate clearance with stale artifacts, active drift alarms, or broken traceability.
+
+## Key Mechanisms
+
+- **Artifact state machine:** Draft → Complete → Valid → Approved → Stale (on upstream change)
+- **Bidirectional traceability:** every node must justify its existence and show what depends on it
+- **Amendment protocol:** constitutions can change, but change is a formal, visible event with mandatory downstream reconciliation
+- **Drift alarms:** traceability, constitution, sequence, quality, and scope drift — each with rule provenance and remediation path
+- **"Why blocked?" panels:** every blocked action explains exactly what rule is violated, which upstream artifact is involved, and what fixes it
+
+## Stack
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| Backend | Tauri (Rust) | Final authority — validation, hashing, state transitions, export |
+| Frontend | React + TypeScript | Window into law — forms, graph visualization, "Why blocked?" display |
+| Storage | Local JSON + optional SQLite | No cloud dependency |
+| Network | None | Optional update check only |
+
+## Project Structure
+
+```
+packages/
+  schema/
+    src/
+      anchor-domain.ts    # Canonical TypeScript types (source of truth)
+src-tauri/
+  src/
+    domain.rs             # Rust domain structs (mirrors TS types)
+    state_machine.rs      # Lifecycle transitions, stale propagation, gate computation
+handbook.md               # Full product handbook
+```
+
+## Status
+
+Schema Pack v1 complete:
+- [x] Canonical TypeScript types (11 enums, 11 domain entities, 9 artifact content shapes)
+- [x] Rust domain structs with serde
+- [x] Artifact lifecycle state machine with tests
+- [ ] Traceability graph model
+- [ ] Drift alarm rule engine
+- [ ] Stale propagation logic
+- [ ] Execution readiness gate evaluator
+- [ ] Export compiler
+- [ ] UI shell
+
+## Documentation
+
+See [handbook.md](handbook.md) for the full product specification: constitution, artifact spine, state machine rules, traceability requirements, amendment protocol, drift alarm taxonomy, export contract, and build sequence.
+
+## License
+
+MIT
